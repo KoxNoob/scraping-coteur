@@ -4,27 +4,6 @@ import re
 import pandas as pd
 import cloudscraper
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-import time
-
-
-# 📌 Configuration de Selenium pour le scraping dynamique des cotes
-def init_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Mode sans interface graphique
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--log-level=3")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    return driver
 
 
 # 📌 Récupération des compétitions avec Cloudscraper
@@ -52,34 +31,24 @@ def get_competitions():
             for competition in sub_menu.find_all("a", class_="list-group-item-action"):
                 competition_name = competition.text.strip()
                 competition_url = "https://www.coteur.com" + competition["href"]
-                competitions_list.append(
-                    {"Pays": country_name, "Compétition": competition_name, "URL": competition_url})
+                competitions_list.append({"Pays": country_name, "Compétition": competition_name, "URL": competition_url})
 
     return pd.DataFrame(competitions_list)
 
 
-# 📌 Scraper les cotes des matchs avec Selenium (car chargées dynamiquement)
+# 📌 Scraper les cotes des matchs avec Cloudscraper
 def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
-    driver = init_driver()
-    driver.get(competition_url)
+    scraper = cloudscraper.create_scraper()
+    response = scraper.get(competition_url).text
 
-    try:
-        WebDriverWait(driver, 5).until(
-            EC.presence_of_element_located((By.TAG_NAME, "script"))
-        )
-    except:
-        st.warning(f"⚠️ Aucun match trouvé pour {competition_url}")
-        driver.quit()
-        return pd.DataFrame()
+    soup = BeautifulSoup(response, "html.parser")
+    scripts = soup.find_all("script")
 
-    # 📌 Trouver tous les liens des matchs
-    scripts = driver.find_elements(By.TAG_NAME, "script")
     match_links = []
-
     for script in scripts:
-        if '"@type":"SportsEvent"' in script.get_attribute("innerHTML"):
+        if '"@type":"SportsEvent"' in script.text:
             try:
-                json_data = json.loads(re.sub(r'[\x00-\x1F\x7F]', '', script.get_attribute("innerHTML")))
+                json_data = json.loads(re.sub(r'[\x00-\x1F\x7F]', '', script.text))
                 if isinstance(json_data, dict) and "url" in json_data:
                     original_url = "https://www.coteur.com" + json_data["url"]
                     corrected_url = original_url.replace("/match/pronostic-", "/cote/")
@@ -90,26 +59,19 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     match_links = match_links[:nb_matchs]  # ✅ Limite le nombre de matchs
 
     all_odds = []
-
     for match_url in match_links:
-        driver.get(match_url)
+        response = scraper.get(match_url).text
+        soup = BeautifulSoup(response, "html.parser")
 
-        try:
-            WebDriverWait(driver, 5).until(
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.bookline"))
-            )
-        except:
+        booklines = soup.select("div.bookline")
+        if not booklines:
             st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
             continue
 
-        # Extraction des cotes via Selenium
-        booklines = driver.find_elements(By.CSS_SELECTOR, "div.bookline")
-
         for row in booklines:
-            bookmaker = row.get_attribute("data-name")
-            odds = row.find_elements(By.CSS_SELECTOR, "div.odds-col")
-            payout_elem = row.find_element(By.CSS_SELECTOR, "div.border.bg-warning.payout") if row.find_elements(
-                By.CSS_SELECTOR, "div.border.bg-warning.payout") else None
+            bookmaker = row.get("data-name", "Inconnu")  # ✅ Vérification
+            odds = row.select("div.odds-col")
+            payout_elem = row.select_one("div.border.bg-warning.payout")
             payout = payout_elem.text.strip() if payout_elem else "N/A"
 
             if len(odds) >= 3:
@@ -122,7 +84,6 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
                 if bookmaker in selected_bookmakers:
                     all_odds.append([match_name, bookmaker, odd_1, odd_n, odd_2, payout])
 
-    driver.quit()
     return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Nul", "2", "Retour"])
 
 
@@ -169,6 +130,22 @@ def main():
                             )
                             for comp in selected_competitions
                         ])
+
+                    if not all_odds_df.empty:
+                        # ✅ Convertir la colonne "Retour" en float
+                        all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").astype(float)
+
+                        # 🔹 Moyennes TRJ par opérateur
+                        trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index()
+                        trj_mean.columns = ["Bookmaker", "Moyenne TRJ"]
+
+                        # Trier les TRJ en ordre décroissant + décimale = 2
+                        trj_mean = trj_mean.sort_values(by="Moyenne TRJ", ascending=False)
+                        trj_mean["Moyenne TRJ"] = trj_mean["Moyenne TRJ"].apply(lambda x: f"{x:.2f}%")
+
+                        # 🔹 Affichage des moyennes TRJ
+                        st.subheader("📊 Moyenne des TRJ par opérateur")
+                        st.dataframe(trj_mean)
 
                     st.subheader("📌 Cotes récupérées")
                     st.dataframe(all_odds_df)
