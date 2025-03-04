@@ -16,20 +16,20 @@ import time
 # 📌 Configuration du navigateur Selenium
 def init_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Exécute Chrome en mode headless
+    chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--log-level=3")
 
-    # Vérifier si on est sur Heroku (Chrome est installé dans un chemin spécifique)
+    # Définition des chemins pour Chrome et ChromeDriver installés via le buildpack
     if "DYNO" in os.environ:
-        chrome_options.binary_location = "/app/.chromium-browser/bin/chromium-browser"
-        chromedriver_path = "/app/.chromedriver/bin/chromedriver"
+        chrome_options.binary_location = "/app/.cache/chrome-linux/chrome"
+        chromedriver_path = "/app/.cache/selenium/chromedriver"
+
     else:
         chromedriver_path = "chromedriver"  # Pour exécution locale
 
-    # Initialisation du driver avec le bon chemin
     driver = webdriver.Chrome(service=Service(chromedriver_path), options=chrome_options)
     return driver
 
