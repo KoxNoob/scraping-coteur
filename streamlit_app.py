@@ -9,7 +9,6 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
 
@@ -17,18 +16,18 @@ import time
 # 📌 Configuration du navigateur Selenium
 def init_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")  # Exécute sans interface graphique
+    chrome_options.add_argument("--headless")  # Exécute Chrome en mode headless
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--log-level=3")
 
-    # Utilisation de Chrome sous Heroku
-    chrome_bin = "/usr/bin/google-chrome"  # Chemin sous Heroku
-    if os.path.exists(chrome_bin):
-        chrome_options.binary_location = chrome_bin
+    # Vérifier si on est sur Heroku (Chrome est installé dans un chemin spécifique)
+    if "DYNO" in os.environ:
+        chrome_options.binary_location = "/app/.apt/usr/bin/google-chrome"
 
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    # Initialisation du driver
+    driver = webdriver.Chrome(service=Service("/app/.apt/usr/bin/chromedriver"), options=chrome_options)
     return driver
 
 
