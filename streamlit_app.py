@@ -19,9 +19,19 @@ def get_competitions():
 
     for button in country_buttons:
         country_name = button.text.strip()
-        if "href" in button.attrs:
-            competition_url = "https://www.coteur.com" + button["href"]
-            competitions_list.append({"Pays": country_name, "Compétition": country_name, "URL": competition_url})
+        sub_menu_id = button.get("data-bs-target")
+
+        if not sub_menu_id:
+            continue
+
+        sub_menu_id = sub_menu_id.replace("#", "")
+        sub_menu = soup.find("ul", id=sub_menu_id)
+
+        if sub_menu:
+            for competition in sub_menu.find_all("a", class_="list-group-item-action"):
+                competition_name = competition.text.strip()
+                competition_url = "https://www.coteur.com" + competition["href"]
+                competitions_list.append({"Pays": country_name, "Compétition": competition_name, "URL": competition_url})
 
     return pd.DataFrame(competitions_list)
 
