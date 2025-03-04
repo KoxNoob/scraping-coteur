@@ -3,4 +3,4 @@ selenium
 webdriver-manager
 beautifulsoup4
 pandas
-undetected-chromedriver
+undetected-chromedriver==3.4.6
