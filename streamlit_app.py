@@ -4,29 +4,6 @@ import re
 import pandas as pd
 import cloudscraper
 from bs4 import BeautifulSoup
-import time
-
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from selenium.webdriver.support.ui import WebDriverWait
-from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.chrome import ChromeDriverManager
-
-
-# 📌 Configuration du navigateur Selenium
-def init_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")  # ✅ Exécute sans interface graphique
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--blink-settings=imagesEnabled=false")
-    chrome_options.add_argument("--log-level=3")
-
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    return driver
 
 
 # 📌 Récupération des compétitions avec Cloudscraper
@@ -42,45 +19,26 @@ def get_competitions():
 
     for button in country_buttons:
         country_name = button.text.strip()
-        sub_menu_id = button.get("data-bs-target")
-
-        if not sub_menu_id:
-            continue
-
-        sub_menu_id = sub_menu_id.replace("#", "")
-        sub_menu = soup.find("ul", id=sub_menu_id)
-
-        if sub_menu:
-            for competition in sub_menu.find_all("a", class_="list-group-item-action"):
-                competition_name = competition.text.strip()
-                competition_url = "https://www.coteur.com" + competition["href"]
-                competitions_list.append(
-                    {"Pays": country_name, "Compétition": competition_name, "URL": competition_url})
+        if "href" in button.attrs:
+            competition_url = "https://www.coteur.com" + button["href"]
+            competitions_list.append({"Pays": country_name, "Compétition": country_name, "URL": competition_url})
 
     return pd.DataFrame(competitions_list)
 
 
-# 📌 Scraper les cotes des matchs avec Selenium
+# 📌 Scraper les cotes des matchs avec Cloudscraper
 def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
-    driver = init_driver()
-    driver.get(competition_url)
+    scraper = cloudscraper.create_scraper()
+    response = scraper.get(competition_url).text
 
-    try:
-        WebDriverWait(driver, 5).until(
-            EC.presence_of_all_elements_located((By.TAG_NAME, "script"))
-        )
-    except:
-        st.warning(f"⚠️ Aucun match trouvé pour {competition_url}")
-        driver.quit()
-        return pd.DataFrame()
+    soup = BeautifulSoup(response, "html.parser")
+    scripts = soup.find_all("script")
 
-    scripts = driver.find_elements(By.TAG_NAME, "script")
     match_links = []
-
     for script in scripts:
-        if '"@type":"SportsEvent"' in script.get_attribute("innerHTML"):
+        if '"@type":"SportsEvent"' in script.text:
             try:
-                json_data = json.loads(re.sub(r'[\x00-\x1F\x7F]', '', script.get_attribute("innerHTML")))
+                json_data = json.loads(re.sub(r'[\x00-\x1F\x7F]', '', script.text))
                 if isinstance(json_data, dict) and "url" in json_data:
                     original_url = "https://www.coteur.com" + json_data["url"]
                     corrected_url = original_url.replace("/match/pronostic-", "/cote/")
@@ -88,47 +46,30 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
             except json.JSONDecodeError:
                 continue
 
-    match_links = match_links[:nb_matchs]
+    match_links = match_links[:nb_matchs]  # ✅ Limite le nombre de matchs
 
     all_odds = []
     for match_url in match_links:
-        driver.get(match_url)
+        response = scraper.get(match_url).text
+        soup = BeautifulSoup(response, "html.parser")
 
-        try:
-            WebDriverWait(driver, 5).until(
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.bookline"))
-            )
-        except:
-            st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
-            continue
+        booklines = soup.select("div.bookline")
+        for row in booklines:
+            bookmaker = row["data-name"]
+            odds = row.select("div.odds-col")
+            payout_elem = row.select_one("div.border.bg-warning.payout")
+            payout = payout_elem.text.strip() if payout_elem else "N/A"
 
-        odds_script = '''
-        let oddsData = [];
-        document.querySelectorAll("div.bookline").forEach(row => {
-            let bookmaker = row.getAttribute("data-name");
-            let odds = row.querySelectorAll("div.odds-col");
-            let payoutElem = row.querySelector("div.border.bg-warning.payout");
-            let payout = payoutElem ? payoutElem.innerText.trim() : "N/A";
+            if len(odds) >= 3:
+                odd_1 = odds[0].text.strip()
+                odd_n = odds[1].text.strip()
+                odd_2 = odds[2].text.strip()
+                match_name = match_url.split("/")[-1].replace("-", " ").title()
+                match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()  # ✅ Nettoyage du nom du match
 
-            if (odds.length >= 3) {
-                let odd_1 = odds[0].innerText.trim();
-                let odd_n = odds[1].innerText.trim();
-                let odd_2 = odds[2].innerText.trim();
-                oddsData.push([bookmaker, odd_1, odd_n, odd_2, payout]);
-            }
-        });
-        return oddsData;
-        '''
-        odds_list = driver.execute_script(odds_script)
+                if bookmaker in selected_bookmakers:
+                    all_odds.append([match_name, bookmaker, odd_1, odd_n, odd_2, payout])
 
-        match_name = match_url.split("/")[-1].replace("-", " ").title()
-        match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()
-
-        for odd in odds_list:
-            if odd[0] in selected_bookmakers:
-                all_odds.append([match_name] + odd)
-
-    driver.quit()
     return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Nul", "2", "Retour"])
 
 
