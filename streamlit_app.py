@@ -18,6 +18,7 @@ from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
 
+
 def init_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -26,11 +27,19 @@ def init_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--log-level=3")
 
-    # Définition des chemins pour Chrome et ChromeDriver installés manuellement
-    chrome_options.binary_location = "/app/.apt/usr/bin/google-chrome"
-    chromedriver_path = "/app/.chromedriver/bin/chromedriver"
+    # 🔹 Vérifier que Chrome et ChromeDriver existent bien
+    chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/app/.apt/usr/bin/google-chrome")
+    chromedriver_path = os.environ.get("CHROMEDRIVER_PATH", "/app/.chromedriver/bin/chromedriver")
 
+    if not os.path.exists(chrome_bin):
+        raise FileNotFoundError(f"Chrome introuvable à {chrome_bin}")
+
+    if not os.path.exists(chromedriver_path):
+        raise FileNotFoundError(f"ChromeDriver introuvable à {chromedriver_path}")
+
+    chrome_options.binary_location = chrome_bin
     driver = webdriver.Chrome(service=Service(chromedriver_path), options=chrome_options)
+
     return driver
 
 
