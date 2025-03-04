@@ -1,6 +1,5 @@
 streamlit
 selenium
-webdriver-manager
+cfscrape
 beautifulsoup4
 pandas
-undetected-chromedriver==3.4.6
