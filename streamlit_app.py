@@ -64,8 +64,12 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         soup = BeautifulSoup(response, "html.parser")
 
         booklines = soup.select("div.bookline")
+        if not booklines:
+            st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")  # ✅ Alerte si aucun bookmaker n'est trouvé
+            continue
+
         for row in booklines:
-            bookmaker = row["data-name"]
+            bookmaker = row.get("data-name", "Inconnu")  # ✅ Ajout d'une vérification
             odds = row.select("div.odds-col")
             payout_elem = row.select_one("div.border.bg-warning.payout")
             payout = payout_elem.text.strip() if payout_elem else "N/A"
