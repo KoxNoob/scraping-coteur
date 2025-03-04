@@ -22,19 +22,31 @@ def init_driver():
     chrome_options.add_argument("--blink-settings=imagesEnabled=false")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--log-level=3")
-    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-    return driver
+    try:
+        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+        return driver
+    except Exception as e:
+        st.error(f"Erreur lors de l'initialisation du driver Selenium : {e}")
+        return None
 
 # Récupération des compétitions de football
 @st.cache_data
 def get_competitions():
     driver = init_driver()
+    if driver is None:
+        return pd.DataFrame()
+
     url = "https://www.coteur.com/cotes-foot"
     driver.get(url)
 
-    WebDriverWait(driver, 10).until(
-        EC.presence_of_element_located((By.CLASS_NAME, "nav.flex-column.list-group.list-group-flush"))
-    )
+    try:
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "nav.flex-column.list-group.list-group-flush"))
+        )
+    except Exception as e:
+        st.error(f"Erreur lors de l'attente de l'élément : {e}")
+        driver.quit()
+        return pd.DataFrame()
 
     country_buttons = driver.find_elements(By.CSS_SELECTOR, "a.list-group-item.list-group-item-action.d-flex")
 
@@ -71,14 +83,18 @@ def get_competitions():
 @st.cache_data
 def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     driver = init_driver()
+    if driver is None:
+        return pd.DataFrame()
+
     driver.get(competition_url)
 
     try:
         WebDriverWait(driver, 5).until(
             EC.presence_of_all_elements_located((By.TAG_NAME, "script"))
         )
-    except:
-        st.warning(f"⚠️ Aucun match trouvé pour {competition_url}")
+    except Exception as e:
+        st.warning(f"⚠️ Aucun match trouvé pour {competition_url} : {e}")
+        driver.quit()
         return pd.DataFrame()
 
     scripts = driver.find_elements(By.TAG_NAME, "script")
@@ -106,8 +122,8 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
             WebDriverWait(driver, 5).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.bookline"))
             )
-        except:
-            st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
+        except Exception as e:
+            st.warning(f"⚠️ Aucune cote trouvée pour {match_url} : {e}")
             continue
 
         odds_script = '''
