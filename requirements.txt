@@ -4,3 +4,4 @@ webdriver-manager
 beautifulsoup4
 pandas
 numpy
+chromedriver-autoinstaller
