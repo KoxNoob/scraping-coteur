@@ -23,13 +23,13 @@ def init_driver():
     chrome_options.add_argument("--log-level=3")
 
     # Définition des chemins pour Chrome et ChromeDriver installés via le buildpack
-    if "DYNO" in os.environ:
-        chrome_options.binary_location = "/app/.cache/chrome-linux/chrome"
-        chromedriver_path = "/app/.cache/selenium/chromedriver"
-
+    if "GOOGLE_CHROME_SHIM" in os.environ:
+        chrome_options.binary_location = os.environ["GOOGLE_CHROME_SHIM"]
+        chromedriver_path = "/app/.chromedriver/bin/chromedriver"
     else:
         chromedriver_path = "chromedriver"  # Pour exécution locale
 
+    # Initialisation du WebDriver
     driver = webdriver.Chrome(service=Service(chromedriver_path), options=chrome_options)
     return driver
 
