@@ -1,6 +1,6 @@
 streamlit
-cloudscraper
 selenium
+webdriver-manager
 beautifulsoup4
 pandas
-webdriver_manager
+numpy
