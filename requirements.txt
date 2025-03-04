@@ -1,4 +1,5 @@
 streamlit
 cloudscraper
+selenium
 beautifulsoup4
 pandas
