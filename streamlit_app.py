@@ -17,12 +17,23 @@ def get_competitions():
     country_sections = soup.select("a.list-group-item.list-group-item-action.d-flex")
 
     competitions_list = []
+
     for section in country_sections:
         country_name = section.text.strip()
         href = section.get("href")
         if href:
-            competitions_list.append(
-                {"Pays": country_name, "Compétition": section.text.strip(), "URL": "https://www.coteur.com" + href})
+            country_url = "https://www.coteur.com" + href
+            country_response = requests.get(country_url)
+            if country_response.status_code != 200:
+                continue
+            country_soup = BeautifulSoup(country_response.text, "html.parser")
+            competition_links = country_soup.select("ul.list-group-flush a.list-group-item-action")
+
+            for comp in competition_links:
+                competition_name = comp.text.strip()
+                competition_url = "https://www.coteur.com" + comp.get("href")
+                competitions_list.append(
+                    {"Pays": country_name, "Compétition": competition_name, "URL": competition_url})
 
     return pd.DataFrame(competitions_list)
 
