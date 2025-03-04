@@ -12,8 +12,8 @@ from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
 
-
-# 📌 Configuration du navigateur Selenium
+# Configuration du navigateur Selenium
+@st.cache_resource
 def init_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -25,8 +25,8 @@ def init_driver():
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     return driver
 
-
-# 📌 Récupération des compétitions de football
+# Récupération des compétitions de football
+@st.cache_data
 def get_competitions():
     driver = init_driver()
     url = "https://www.coteur.com/cotes-foot"
@@ -62,13 +62,13 @@ def get_competitions():
                         {"Pays": country_name, "Compétition": competition_name, "URL": competition_url})
 
         except Exception as e:
-            print(f"⚠️ Erreur lors de l'ouverture de {country_name} : {e}")
+            st.warning(f"⚠️ Erreur lors de l'ouverture de {country_name} : {e}")
 
     driver.quit()
     return pd.DataFrame(competitions_list)
 
-
-# 📌 Scraper les cotes d'une compétition
+# Scraper les cotes d'une compétition
+@st.cache_data
 def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     driver = init_driver()
     driver.get(competition_url)
@@ -94,7 +94,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
                     match_links.append(corrected_url)
             except json.JSONDecodeError:
                 continue
-    # ✅ Limite le nombre de matchs récupérés à ce que l'utilisateur a choisi
+
     match_links = match_links[:nb_matchs]
 
     all_odds = []
@@ -130,7 +130,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         odds_list = driver.execute_script(odds_script)
 
         match_name = match_url.split("/")[-1].replace("-", " ").title()
-        match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()  # ✅ Enlève les chiffres et "#Cote"
+        match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()
         for odd in odds_list:
             if odd[0] in selected_bookmakers:
                 all_odds.append([match_name] + odd)
@@ -139,12 +139,11 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
 
     return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Nul", "2", "Retour"])
 
-
-# 📌 Interface principale Streamlit
+# Interface principale Streamlit
 def main():
     st.set_page_config(page_title="Scraping des Cotes", page_icon="⚽", layout="wide")
 
-    # 📌 Menu latéral
+    # Menu latéral
     st.sidebar.title("📌 Menu")
     selected_sport = st.sidebar.radio("Choisissez un sport", ["⚽ Football", "🏀⚾🎾 Autres Sports"])
 
@@ -179,38 +178,30 @@ def main():
                             get_match_odds(
                                 competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
                                 selected_bookmakers,
-                                nb_matchs  # ✅ Passer nb_matchs à la fonction
+                                nb_matchs
                             )
-
                             for comp in selected_competitions
                         ])
 
                     if not all_odds_df.empty:
-                        # ✅ Convertir la colonne "Retour" en float
                         all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").astype(float)
 
-                        # 🔹 Moyennes TRJ par opérateur
                         trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index()
                         trj_mean.columns = ["Bookmaker", "Moyenne TRJ"]
 
-                        # Trier les TRJ en ordre décroissant + décimale = 2
                         trj_mean = trj_mean.sort_values(by="Moyenne TRJ", ascending=False)
                         trj_mean["Moyenne TRJ"] = trj_mean["Moyenne TRJ"].apply(lambda x: f"{x:.2f}%")
 
-                        # 🔹 Affichage des moyennes TRJ
                         st.subheader("📊 Moyenne des TRJ par opérateur")
                         st.dataframe(trj_mean)
 
                     st.subheader("📌 Cotes récupérées")
                     st.dataframe(all_odds_df)
 
-
-
     else:
         st.title("🏀⚾🎾 Autres Sports")
         st.image("https://upload.wikimedia.org/wikipedia/commons/3/3a/Under_construction_icon-yellow.svg",
                  caption="🚧 En cours de développement...", use_column_width=True)
-
 
 # Exécution de l'application Streamlit
 if __name__ == "__main__":
