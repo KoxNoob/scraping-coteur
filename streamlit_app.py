@@ -12,8 +12,8 @@ from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 import time
 
-# Configuration du navigateur Selenium
-@st.cache_resource
+
+# 📌 Configuration du navigateur Selenium
 def init_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -22,35 +22,19 @@ def init_driver():
     chrome_options.add_argument("--blink-settings=imagesEnabled=false")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--log-level=3")
+    driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
+    return driver
 
-    # Spécifiez le chemin vers le binaire Chrome
-    chrome_options.binary_location = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
 
-    try:
-        driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-        return driver
-    except Exception as e:
-        st.error(f"Erreur lors de l'initialisation du driver Selenium : {e}")
-        return None
-
-# Récupération des compétitions de football
-@st.cache_data
+# 📌 Récupération des compétitions de football
 def get_competitions():
     driver = init_driver()
-    if driver is None:
-        return pd.DataFrame()
-
     url = "https://www.coteur.com/cotes-foot"
     driver.get(url)
 
-    try:
-        WebDriverWait(driver, 10).until(
-            EC.presence_of_element_located((By.CLASS_NAME, "nav.flex-column.list-group.list-group-flush"))
-        )
-    except Exception as e:
-        st.error(f"Erreur lors de l'attente de l'élément : {e}")
-        driver.quit()
-        return pd.DataFrame()
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CLASS_NAME, "nav.flex-column.list-group.list-group-flush"))
+    )
 
     country_buttons = driver.find_elements(By.CSS_SELECTOR, "a.list-group-item.list-group-item-action.d-flex")
 
@@ -78,27 +62,23 @@ def get_competitions():
                         {"Pays": country_name, "Compétition": competition_name, "URL": competition_url})
 
         except Exception as e:
-            st.warning(f"⚠️ Erreur lors de l'ouverture de {country_name} : {e}")
+            print(f"⚠️ Erreur lors de l'ouverture de {country_name} : {e}")
 
     driver.quit()
     return pd.DataFrame(competitions_list)
 
-# Scraper les cotes d'une compétition
-@st.cache_data
+
+# 📌 Scraper les cotes d'une compétition
 def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     driver = init_driver()
-    if driver is None:
-        return pd.DataFrame()
-
     driver.get(competition_url)
 
     try:
         WebDriverWait(driver, 5).until(
             EC.presence_of_all_elements_located((By.TAG_NAME, "script"))
         )
-    except Exception as e:
-        st.warning(f"⚠️ Aucun match trouvé pour {competition_url} : {e}")
-        driver.quit()
+    except:
+        st.warning(f"⚠️ Aucun match trouvé pour {competition_url}")
         return pd.DataFrame()
 
     scripts = driver.find_elements(By.TAG_NAME, "script")
@@ -114,7 +94,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
                     match_links.append(corrected_url)
             except json.JSONDecodeError:
                 continue
-
+    # ✅ Limite le nombre de matchs récupérés à ce que l'utilisateur a choisi
     match_links = match_links[:nb_matchs]
 
     all_odds = []
@@ -126,8 +106,8 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
             WebDriverWait(driver, 5).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.bookline"))
             )
-        except Exception as e:
-            st.warning(f"⚠️ Aucune cote trouvée pour {match_url} : {e}")
+        except:
+            st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
             continue
 
         odds_script = '''
@@ -150,7 +130,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         odds_list = driver.execute_script(odds_script)
 
         match_name = match_url.split("/")[-1].replace("-", " ").title()
-        match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()
+        match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()  # ✅ Enlève les chiffres et "#Cote"
         for odd in odds_list:
             if odd[0] in selected_bookmakers:
                 all_odds.append([match_name] + odd)
@@ -159,11 +139,12 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
 
     return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Nul", "2", "Retour"])
 
-# Interface principale Streamlit
+
+# 📌 Interface principale Streamlit
 def main():
     st.set_page_config(page_title="Scraping des Cotes", page_icon="⚽", layout="wide")
 
-    # Menu latéral
+    # 📌 Menu latéral
     st.sidebar.title("📌 Menu")
     selected_sport = st.sidebar.radio("Choisissez un sport", ["⚽ Football", "🏀⚾🎾 Autres Sports"])
 
@@ -177,54 +158,57 @@ def main():
 
         if "competitions_df" in st.session_state:
             competitions_df = st.session_state["competitions_df"]
-            if not competitions_df.empty:
-                st.subheader("📌 Sélectionnez les compétitions à analyser")
-                selected_competitions = st.multiselect(
-                    "Choisissez les compétitions",
-                    competitions_df["Compétition"].tolist()
-                )
+            st.subheader("📌 Sélectionnez les compétitions à analyser")
+            selected_competitions = st.multiselect(
+                "Choisissez les compétitions",
+                competitions_df["Compétition"].tolist()
+            )
 
-                if selected_competitions:
-                    all_bookmakers = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin",
-                                      "Vbet", "Genybet", "Feelingbet", "Betsson"]
-                    selected_bookmakers = st.multiselect("Sélectionnez les bookmakers", all_bookmakers,
-                                                         default=all_bookmakers)
+            if selected_competitions:
+                all_bookmakers = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin",
+                                  "Vbet", "Genybet", "Feelingbet", "Betsson"]
+                selected_bookmakers = st.multiselect("Sélectionnez les bookmakers", all_bookmakers,
+                                                     default=all_bookmakers)
 
-                    nb_matchs = st.slider("🔢 Nombre de matchs à récupérer par compétition", min_value=1, max_value=20,
-                                          value=5)
+                nb_matchs = st.slider("🔢 Nombre de matchs à récupérer par compétition", min_value=1, max_value=20,
+                                      value=5)
 
-                    if st.button("🔍 Lancer le scraping des cotes"):
-                        with st.spinner("Scraping en cours..."):
-                            all_odds_df = pd.concat([
-                                get_match_odds(
-                                    competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
-                                    selected_bookmakers,
-                                    nb_matchs
-                                )
-                                for comp in selected_competitions
-                            ])
+                if st.button("🔍 Lancer le scraping des cotes"):
+                    with st.spinner("Scraping en cours..."):
+                        all_odds_df = pd.concat([
+                            get_match_odds(
+                                competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
+                                selected_bookmakers,
+                                nb_matchs  # ✅ Passer nb_matchs à la fonction
+                            )
 
-                        if not all_odds_df.empty:
-                            all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").astype(float)
+                            for comp in selected_competitions
+                        ])
+                    if not all_odds_df.empty:
+                        # ✅ Convertir la colonne "Retour" en float
+                        all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").astype(float)
 
-                            trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index()
-                            trj_mean.columns = ["Bookmaker", "Moyenne TRJ"]
+                        # 🔹 Moyennes TRJ par opérateur
+                        trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index()
+                        trj_mean.columns = ["Bookmaker", "Moyenne TRJ"]
 
-                            trj_mean = trj_mean.sort_values(by="Moyenne TRJ", ascending=False)
-                            trj_mean["Moyenne TRJ"] = trj_mean["Moyenne TRJ"].apply(lambda x: f"{x:.2f}%")
+                        # Trier les TRJ en ordre décroissant + décimale = 2
+                        trj_mean = trj_mean.sort_values(by="Moyenne TRJ", ascending=False)
+                        trj_mean["Moyenne TRJ"] = trj_mean["Moyenne TRJ"].apply(lambda x: f"{x:.2f}%")
 
-                            st.subheader("📊 Moyenne des TRJ par opérateur")
-                            st.dataframe(trj_mean)
+                        # 🔹 Affichage des moyennes TRJ
+                        st.subheader("📊 Moyenne des TRJ par opérateur")
+                        st.dataframe(trj_mean)
 
-                        st.subheader("📌 Cotes récupérées")
-                        st.dataframe(all_odds_df)
-            else:
-                st.error("Aucune compétition trouvée. Veuillez réessayer.")
+                    st.subheader("📌 Cotes récupérées")
+                    st.dataframe(all_odds_df)
+
 
     else:
         st.title("🏀⚾🎾 Autres Sports")
         st.image("https://upload.wikimedia.org/wikipedia/commons/3/3a/Under_construction_icon-yellow.svg",
                  caption="🚧 En cours de développement...", use_column_width=True)
+
 
 # Exécution de l'application Streamlit
 if __name__ == "__main__":
