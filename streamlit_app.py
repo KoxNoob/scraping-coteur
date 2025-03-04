@@ -3,6 +3,7 @@ import json
 import re
 import pandas as pd
 import cloudscraper
+from bs4 import BeautifulSoup
 
 # 📌 Initialisation du scraper
 scraper = cloudscraper.create_scraper()
