@@ -3,19 +3,19 @@ import json
 import re
 import pandas as pd
 import cloudscraper
-from bs4 import BeautifulSoup
+
+# 📌 Initialisation du scraper
+scraper = cloudscraper.create_scraper()
 
 
 # 📌 Récupération des compétitions avec Cloudscraper
 def get_competitions():
-    scraper = cloudscraper.create_scraper()
     url = "https://www.coteur.com/cotes-foot"
     response = scraper.get(url).text
-
     soup = BeautifulSoup(response, "html.parser")
-    country_buttons = soup.select("a.list-group-item.list-group-item-action.d-flex")
 
     competitions_list = []
+    country_buttons = soup.select("a.list-group-item.list-group-item-action.d-flex")
 
     for button in country_buttons:
         country_name = button.text.strip()
@@ -31,60 +31,56 @@ def get_competitions():
             for competition in sub_menu.find_all("a", class_="list-group-item-action"):
                 competition_name = competition.text.strip()
                 competition_url = "https://www.coteur.com" + competition["href"]
-                competitions_list.append({"Pays": country_name, "Compétition": competition_name, "URL": competition_url})
+                competitions_list.append(
+                    {"Pays": country_name, "Compétition": competition_name, "URL": competition_url})
 
     return pd.DataFrame(competitions_list)
 
 
-# 📌 Scraper les cotes des matchs avec Cloudscraper
-def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
-    scraper = cloudscraper.create_scraper()
+# 📌 Récupération des matchs d'une compétition et extraction des match_id
+def get_match_ids(competition_url, nb_matchs):
     response = scraper.get(competition_url).text
-
     soup = BeautifulSoup(response, "html.parser")
-    scripts = soup.find_all("script")
 
-    match_links = []
+    scripts = soup.find_all("script")
+    match_ids = []
+
     for script in scripts:
         if '"@type":"SportsEvent"' in script.text:
             try:
                 json_data = json.loads(re.sub(r'[\x00-\x1F\x7F]', '', script.text))
                 if isinstance(json_data, dict) and "url" in json_data:
-                    original_url = "https://www.coteur.com" + json_data["url"]
-                    corrected_url = original_url.replace("/match/pronostic-", "/cote/")
-                    match_links.append(corrected_url)
+                    match_id = json_data["url"].split("-")[-1].replace("#cote", "")
+                    match_ids.append(match_id)
             except json.JSONDecodeError:
                 continue
 
-    match_links = match_links[:nb_matchs]  # ✅ Limite le nombre de matchs
+    return match_ids[:nb_matchs]  # ✅ Limite au nombre de matchs sélectionné
 
+
+# 📌 Scraper les cotes des matchs avec l'API de `coteur.com`
+def get_match_odds(match_ids, selected_bookmakers):
     all_odds = []
-    for match_url in match_links:
-        response = scraper.get(match_url).text
-        soup = BeautifulSoup(response, "html.parser")
 
-        booklines = soup.select("div.bookline")
-        if not booklines:
-            st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
+    for match_id in match_ids:
+        url = f"https://www.coteur.com/api/renc/avg/{match_id}"
+        response = scraper.get(url).json()
+
+        if "bookmakers" not in response:
+            st.warning(f"⚠️ Aucune cote trouvée pour le match {match_id}")
             continue
 
-        for row in booklines:
-            bookmaker = row.get("data-name", "Inconnu")  # ✅ Vérification
-            odds = row.select("div.odds-col")
-            payout_elem = row.select_one("div.border.bg-warning.payout")
-            payout = payout_elem.text.strip() if payout_elem else "N/A"
+        for bookmaker_data in response["bookmakers"]:
+            bookmaker = bookmaker_data["name"]
+            if bookmaker in selected_bookmakers:
+                odd_1 = bookmaker_data.get("1", "N/A")
+                odd_n = bookmaker_data.get("N", "N/A")
+                odd_2 = bookmaker_data.get("2", "N/A")
+                payout = bookmaker_data.get("payout", "N/A")
 
-            if len(odds) >= 3:
-                odd_1 = odds[0].text.strip()
-                odd_n = odds[1].text.strip()
-                odd_2 = odds[2].text.strip()
-                match_name = match_url.split("/")[-1].replace("-", " ").title()
-                match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()  # ✅ Nettoyage du nom du match
+                all_odds.append([match_id, bookmaker, odd_1, odd_n, odd_2, payout])
 
-                if bookmaker in selected_bookmakers:
-                    all_odds.append([match_name, bookmaker, odd_1, odd_n, odd_2, payout])
-
-    return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Nul", "2", "Retour"])
+    return pd.DataFrame(all_odds, columns=["Match ID", "Bookmaker", "1", "Nul", "2", "Retour"])
 
 
 # 📌 Interface principale Streamlit
@@ -122,18 +118,16 @@ def main():
 
                 if st.button("🔍 Lancer le scraping des cotes"):
                     with st.spinner("Scraping en cours..."):
-                        all_odds_df = pd.concat([
-                            get_match_odds(
-                                competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
-                                selected_bookmakers,
-                                nb_matchs
-                            )
-                            for comp in selected_competitions
-                        ])
+                        match_ids = []
+                        for comp in selected_competitions:
+                            comp_url = competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0]
+                            match_ids += get_match_ids(comp_url, nb_matchs)
+
+                        all_odds_df = get_match_odds(match_ids, selected_bookmakers)
 
                     if not all_odds_df.empty:
                         # ✅ Convertir la colonne "Retour" en float
-                        all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").astype(float)
+                        all_odds_df["Retour"] = all_odds_df["Retour"].astype(str).str.replace("%", "").astype(float)
 
                         # 🔹 Moyennes TRJ par opérateur
                         trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index()
