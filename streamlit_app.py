@@ -24,10 +24,13 @@ def init_driver():
 
     # Vérifier si on est sur Heroku (Chrome est installé dans un chemin spécifique)
     if "DYNO" in os.environ:
-        chrome_options.binary_location = "/app/.apt/usr/bin/google-chrome"
+        chrome_options.binary_location = "/app/.chromium-browser/bin/chromium-browser"
+        chromedriver_path = "/app/.chromedriver/bin/chromedriver"
+    else:
+        chromedriver_path = "chromedriver"  # Pour exécution locale
 
-    # Initialisation du driver
-    driver = webdriver.Chrome(service=Service("/app/.apt/usr/bin/chromedriver"), options=chrome_options)
+    # Initialisation du driver avec le bon chemin
+    driver = webdriver.Chrome(service=Service(chromedriver_path), options=chrome_options)
     return driver
 
 
