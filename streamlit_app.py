@@ -14,6 +14,10 @@ import time
 
 
 # 📌 Configuration du navigateur Selenium
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+
 def init_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -22,14 +26,10 @@ def init_driver():
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--log-level=3")
 
-    # Définition des chemins pour Chrome et ChromeDriver installés via le buildpack
-    if "GOOGLE_CHROME_SHIM" in os.environ:
-        chrome_options.binary_location = os.environ["GOOGLE_CHROME_SHIM"]
-        chromedriver_path = "/app/.chromedriver/bin/chromedriver"
-    else:
-        chromedriver_path = "chromedriver"  # Pour exécution locale
+    # Définition des chemins pour Chrome et ChromeDriver installés manuellement
+    chrome_options.binary_location = "/app/.apt/usr/bin/google-chrome"
+    chromedriver_path = "/app/.chromedriver/bin/chromedriver"
 
-    # Initialisation du WebDriver
     driver = webdriver.Chrome(service=Service(chromedriver_path), options=chrome_options)
     return driver
 
