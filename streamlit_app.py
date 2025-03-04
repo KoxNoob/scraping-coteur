@@ -1,6 +1,7 @@
 import streamlit as st
 import json
 import re
+import os
 import pandas as pd
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
@@ -16,12 +17,17 @@ import time
 # 📌 Configuration du navigateur Selenium
 def init_driver():
     chrome_options = Options()
-    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--headless")  # Exécute sans interface graphique
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--blink-settings=imagesEnabled=false")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--log-level=3")
+
+    # Utilisation de Chrome sous Heroku
+    chrome_bin = "/usr/bin/google-chrome"  # Chemin sous Heroku
+    if os.path.exists(chrome_bin):
+        chrome_options.binary_location = chrome_bin
+
     driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
     return driver
 
