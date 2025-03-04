@@ -63,9 +63,15 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         response = scraper.get(match_url).text
         soup = BeautifulSoup(response, "html.parser")
 
+        # 📌 Débogage temporaire pour voir le contenu de la page
+        if not soup:
+            st.warning(f"⚠️ Erreur : Impossible de charger la page {match_url}")
+            continue
+
+        # 🔍 Vérifier si des cotes existent sur la page
         booklines = soup.select("div.bookline")
         if not booklines:
-            st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")  # ✅ Alerte si aucun bookmaker n'est trouvé
+            st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
             continue
 
         for row in booklines:
