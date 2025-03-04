@@ -2,13 +2,12 @@ import streamlit as st
 import json
 import re
 import pandas as pd
-import cfscrape
+import cloudscraper  # ✅ Remplace cfscrape
 from bs4 import BeautifulSoup
-import time
 
 # 📌 Récupération des compétitions de football
 def get_competitions():
-    scraper = cfscrape.create_scraper()  # ✅ Bypass Cloudflare sans Chrome
+    scraper = cloudscraper.create_scraper()  # ✅ Scraper qui contourne Cloudflare
     url = "https://www.coteur.com/cotes-foot"
     response = scraper.get(url).text
 
@@ -25,7 +24,7 @@ def get_competitions():
 
 # 📌 Scraper les cotes d'une compétition
 def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
-    scraper = cfscrape.create_scraper()  # ✅ Remplace Selenium
+    scraper = cloudscraper.create_scraper()
     response = scraper.get(competition_url).text
 
     soup = BeautifulSoup(response, "html.parser")
@@ -43,7 +42,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
             except json.JSONDecodeError:
                 continue
 
-    match_links = match_links[:nb_matchs]  # ✅ Limiter le nombre de matchs
+    match_links = match_links[:nb_matchs]  # ✅ Limite le nombre de matchs
 
     all_odds = []
     for match_url in match_links:
