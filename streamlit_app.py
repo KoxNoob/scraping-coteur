@@ -2,26 +2,47 @@ import streamlit as st
 import json
 import re
 import pandas as pd
-import cloudscraper  # ✅ Remplace cfscrape
+import cloudscraper
 from bs4 import BeautifulSoup
+import time
+
 
 # 📌 Récupération des compétitions de football
 def get_competitions():
-    scraper = cloudscraper.create_scraper()  # ✅ Scraper qui contourne Cloudflare
+    scraper = cloudscraper.create_scraper()
     url = "https://www.coteur.com/cotes-foot"
     response = scraper.get(url).text
 
     soup = BeautifulSoup(response, "html.parser")
-    country_buttons = soup.select("a.list-group-item.list-group-item-action.d-flex")
+
+    # Sélection des éléments contenant les pays
+    country_sections = soup.select("a.list-group-item.list-group-item-action.d-flex")
 
     competitions_list = []
-    for button in country_buttons:
-        country_name = button.text.strip()
-        if "href" in button.attrs:  # ✅ Vérifier si l'attribut 'href' existe
-            competition_url = "https://www.coteur.com" + button["href"]
-            competitions_list.append({"Pays": country_name, "Compétition": country_name, "URL": competition_url})
+
+    for section in country_sections:
+        country_name = section.text.strip()
+
+        # ✅ Vérifier que l'élément contient bien un ID de menu déroulant
+        sub_menu_id = section.get("data-bs-target")
+        if not sub_menu_id:
+            continue  # Si pas de sous-menu, on passe à la section suivante
+
+        sub_menu_id = sub_menu_id.replace("#", "")
+        sub_menu = soup.find("ul", id=sub_menu_id)
+
+        if sub_menu:
+            for competition in sub_menu.find_all("a", class_="list-group-item-action"):
+                competition_name = competition.text.strip()
+                competition_url = "https://www.coteur.com" + competition["href"]
+                competitions_list.append({
+                    "Pays": country_name,
+                    "Compétition": competition_name,
+                    "URL": competition_url
+                })
 
     return pd.DataFrame(competitions_list)
+
 
 # 📌 Scraper les cotes d'une compétition
 def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
@@ -43,7 +64,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
             except json.JSONDecodeError:
                 continue
 
-    match_links = match_links[:nb_matchs]  # ✅ Limite le nombre de matchs
+    match_links = match_links[:nb_matchs]  # ✅ Limiter le nombre de matchs
 
     all_odds = []
     for match_url in match_links:
@@ -52,7 +73,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
 
         booklines = soup.select("div.bookline")
         for row in booklines:
-            bookmaker = row["data-name"]
+            bookmaker = row.get("data-name", "N/A")
             odds = row.select("div.odds-col")
             payout_elem = row.select_one("div.border.bg-warning.payout")
             payout = payout_elem.text.strip() if payout_elem else "N/A"
@@ -68,6 +89,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
                     all_odds.append([match_name, bookmaker, odd_1, odd_n, odd_2, payout])
 
     return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Nul", "2", "Retour"])
+
 
 # 📌 Interface principale Streamlit
 def main():
@@ -136,6 +158,7 @@ def main():
         st.title("🏀⚾🎾 Autres Sports")
         st.image("https://upload.wikimedia.org/wikipedia/commons/3/3a/Under_construction_icon-yellow.svg",
                  caption="🚧 En cours de développement...", use_column_width=True)
+
 
 # Exécution de l'application Streamlit
 if __name__ == "__main__":
