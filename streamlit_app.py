@@ -17,8 +17,9 @@ def get_competitions():
     competitions_list = []
     for button in country_buttons:
         country_name = button.text.strip()
-        competition_url = "https://www.coteur.com" + button["href"]
-        competitions_list.append({"Pays": country_name, "Compétition": country_name, "URL": competition_url})
+        if "href" in button.attrs:  # ✅ Vérifier si l'attribut 'href' existe
+            competition_url = "https://www.coteur.com" + button["href"]
+            competitions_list.append({"Pays": country_name, "Compétition": country_name, "URL": competition_url})
 
     return pd.DataFrame(competitions_list)
 
