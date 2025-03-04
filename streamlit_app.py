@@ -22,6 +22,10 @@ def init_driver():
     chrome_options.add_argument("--blink-settings=imagesEnabled=false")
     chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--log-level=3")
+
+    # Spécifiez le chemin vers le binaire Chrome
+    chrome_options.binary_location = "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+
     try:
         driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
         return driver
@@ -173,46 +177,49 @@ def main():
 
         if "competitions_df" in st.session_state:
             competitions_df = st.session_state["competitions_df"]
-            st.subheader("📌 Sélectionnez les compétitions à analyser")
-            selected_competitions = st.multiselect(
-                "Choisissez les compétitions",
-                competitions_df["Compétition"].tolist()
-            )
+            if not competitions_df.empty:
+                st.subheader("📌 Sélectionnez les compétitions à analyser")
+                selected_competitions = st.multiselect(
+                    "Choisissez les compétitions",
+                    competitions_df["Compétition"].tolist()
+                )
 
-            if selected_competitions:
-                all_bookmakers = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin",
-                                  "Vbet", "Genybet", "Feelingbet", "Betsson"]
-                selected_bookmakers = st.multiselect("Sélectionnez les bookmakers", all_bookmakers,
-                                                     default=all_bookmakers)
+                if selected_competitions:
+                    all_bookmakers = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin",
+                                      "Vbet", "Genybet", "Feelingbet", "Betsson"]
+                    selected_bookmakers = st.multiselect("Sélectionnez les bookmakers", all_bookmakers,
+                                                         default=all_bookmakers)
 
-                nb_matchs = st.slider("🔢 Nombre de matchs à récupérer par compétition", min_value=1, max_value=20,
-                                      value=5)
+                    nb_matchs = st.slider("🔢 Nombre de matchs à récupérer par compétition", min_value=1, max_value=20,
+                                          value=5)
 
-                if st.button("🔍 Lancer le scraping des cotes"):
-                    with st.spinner("Scraping en cours..."):
-                        all_odds_df = pd.concat([
-                            get_match_odds(
-                                competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
-                                selected_bookmakers,
-                                nb_matchs
-                            )
-                            for comp in selected_competitions
-                        ])
+                    if st.button("🔍 Lancer le scraping des cotes"):
+                        with st.spinner("Scraping en cours..."):
+                            all_odds_df = pd.concat([
+                                get_match_odds(
+                                    competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
+                                    selected_bookmakers,
+                                    nb_matchs
+                                )
+                                for comp in selected_competitions
+                            ])
 
-                    if not all_odds_df.empty:
-                        all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").astype(float)
+                        if not all_odds_df.empty:
+                            all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").astype(float)
 
-                        trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index()
-                        trj_mean.columns = ["Bookmaker", "Moyenne TRJ"]
+                            trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index()
+                            trj_mean.columns = ["Bookmaker", "Moyenne TRJ"]
 
-                        trj_mean = trj_mean.sort_values(by="Moyenne TRJ", ascending=False)
-                        trj_mean["Moyenne TRJ"] = trj_mean["Moyenne TRJ"].apply(lambda x: f"{x:.2f}%")
+                            trj_mean = trj_mean.sort_values(by="Moyenne TRJ", ascending=False)
+                            trj_mean["Moyenne TRJ"] = trj_mean["Moyenne TRJ"].apply(lambda x: f"{x:.2f}%")
 
-                        st.subheader("📊 Moyenne des TRJ par opérateur")
-                        st.dataframe(trj_mean)
+                            st.subheader("📊 Moyenne des TRJ par opérateur")
+                            st.dataframe(trj_mean)
 
-                    st.subheader("📌 Cotes récupérées")
-                    st.dataframe(all_odds_df)
+                        st.subheader("📌 Cotes récupérées")
+                        st.dataframe(all_odds_df)
+            else:
+                st.error("Aucune compétition trouvée. Veuillez réessayer.")
 
     else:
         st.title("🏀⚾🎾 Autres Sports")
