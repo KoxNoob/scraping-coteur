@@ -21,22 +21,17 @@ def init_driver():
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
-    # ✅ Vérifier et spécifier le chemin de Firefox (nécessaire sur Streamlit Cloud)
-    firefox_bin_path = "/usr/bin/firefox-esr"
-    if os.path.exists(firefox_bin_path):
-        firefox_options.binary_location = firefox_bin_path
-    else:
-        raise FileNotFoundError("Firefox non trouvé sur Streamlit Cloud !")
+    # ✅ NE PAS définir binary_location pour laisser Selenium détecter Firefox automatiquement
+    # (C'est ainsi que cela fonctionnait avant)
 
     # ✅ Télécharger et utiliser Geckodriver automatiquement via WebDriver Manager
-    gecko_path = GeckoDriverManager().install()
-    service = Service(gecko_path)
+    service = Service(GeckoDriverManager().install())
 
     driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
 
 
-# 📌 Récupération des compétitions de football
+# 📌 Récupération des compétitions de football (disponible uniquement en mode Admin)
 def get_competitions():
     driver = init_driver()
     url = "https://www.coteur.com/cotes-foot"
@@ -84,7 +79,8 @@ def get_competitions():
         key=lambda x: x.map(lambda y: ("" if y == "France" else y))
     )
 
-    return competitions_df
+    # Stocker les compétitions en mémoire
+    st.session_state["competitions_df"] = competitions_df
 
 
 # 📌 Scraper les cotes d'une compétition
@@ -164,46 +160,84 @@ def main():
     st.set_page_config(page_title="Scraping des Cotes", page_icon="⚽", layout="wide")
 
     st.sidebar.title("📌 Menu")
-    selected_sport = st.sidebar.radio("Choisissez un sport", ["⚽ Football", "🏀⚾🎾 Autres Sports"])
+    menu_selection = st.sidebar.radio("Choisissez un mode", ["🏠 Accueil", "⚽ Football", "🔑 Admin"])
 
-    if selected_sport == "⚽ Football":
+    if menu_selection == "🔑 Admin":
+        admin_password = st.sidebar.text_input("Mot de passe :", type="password")
+
+        if admin_password == "monmotdepasse":
+            st.sidebar.success("✅ Accès accordé")
+            st.title("🔧 Mode Administrateur")
+
+            if st.button("📌 Récupérer les compétitions disponibles"):
+                with st.spinner("Chargement des compétitions..."):
+                    get_competitions()
+                st.success("✅ Compétitions mises à jour !")
+
+            if "competitions_df" in st.session_state:
+                st.dataframe(st.session_state["competitions_df"])
+            else:
+                st.warning("⚠️ Aucune donnée en mémoire. Veuillez récupérer les compétitions.")
+
+
+    elif menu_selection == "⚽ Football":
+
         st.title("📊 Scraping des Cotes Football")
 
-        if st.button("📌 Récupérer les compétitions disponibles"):
-            with st.spinner("Chargement des compétitions..."):
-                competitions_df = get_competitions()
-            st.session_state["competitions_df"] = competitions_df
+        # ⚠️ Vérifier que les compétitions sont bien en mémoire avant d'afficher les sélections
 
-        if "competitions_df" in st.session_state:
-            competitions_df = st.session_state["competitions_df"]
-            selected_competitions = st.multiselect("Choisissez les compétitions",
+        if "competitions_df" not in st.session_state or st.session_state["competitions_df"].empty:
+            st.warning(
+                "⚠️ Aucune donnée en mémoire. Veuillez d'abord exécuter la récupération des compétitions en mode Admin.")
+        else:
+            competitions_df = st.session_state["competitions_df"]  # Utilisation directe du DataFrame stocké
+            selected_competitions = st.multiselect("📌 Sélectionnez les compétitions",
                                                    competitions_df["Compétition"].tolist())
-
             if selected_competitions:
                 all_bookmakers = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin",
                                   "Vbet", "Genybet", "Feelingbet", "Betsson"]
-                selected_bookmakers = st.multiselect("Sélectionnez les bookmakers", all_bookmakers,
+                selected_bookmakers = st.multiselect("🎰 Sélectionnez les bookmakers", all_bookmakers,
                                                      default=all_bookmakers)
-
-                nb_matchs = st.slider("🔢 Nombre de matchs", 1, 20, 5)
+                nb_matchs = st.slider("🔢 Nombre de matchs par compétition", 1, 20, 5)
 
                 if st.button("🔍 Lancer le scraping"):
-                    all_odds_df = pd.concat([get_match_odds(
-                        competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
-                        selected_bookmakers, nb_matchs) for comp in selected_competitions])
+                    with st.spinner("Scraping en cours..."):
+                        all_odds_df = pd.concat([
+                            get_match_odds(
+                                competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
+                                selected_bookmakers, nb_matchs
+                            ) for comp in selected_competitions
+                        ], ignore_index=True)
 
                     if not all_odds_df.empty:
+                        # ✅ Convertir la colonne "Retour" en float pour le tri et l'affichage
                         all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").str.replace(",", ".").astype(
                             float)
-                        trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index().sort_values(
-                            by="Retour", ascending=False)
-                        trj_mean["Retour"] = trj_mean["Retour"].apply(lambda x: f"{x:.2f}%")
+
+                        # ✅ Calculer la moyenne des TRJ par opérateur (trié en décroissant)
+                        trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index()
+                        trj_mean.columns = ["Bookmaker", "Moyenne TRJ"]
+                        trj_mean = trj_mean.sort_values(by="Moyenne TRJ", ascending=False)
+                        trj_mean["Moyenne TRJ"] = trj_mean["Moyenne TRJ"].apply(lambda x: f"{x:.2f}%")
+
+                        # ✅ Réinitialiser l'index en partant de 1
+                        trj_mean.reset_index(drop=True, inplace=True)
+                        trj_mean.index = trj_mean.index + 1
+
+                        # ✅ Trier les cotes par match en ordre décroissant de "Retour"
+                        all_odds_df["Match_Order"] = all_odds_df.groupby("Match").ngroup()
+
+                        # Ajoute un identifiant unique pour garder l'ordre original des matchs
+                        all_odds_df = all_odds_df.sort_values(by=["Match_Order", "Retour"],
+                                                              ascending=[False, False]).drop(columns=["Match_Order"])
+
+                        # 🔹 Affichage des moyennes TRJ
                         st.subheader("📊 Moyenne des TRJ par opérateur")
                         st.dataframe(trj_mean)
 
+                        # 🔹 Affichage des cotes triées par match
                         st.subheader("📌 Cotes récupérées")
                         st.dataframe(all_odds_df)
-
 
 if __name__ == "__main__":
     main()
