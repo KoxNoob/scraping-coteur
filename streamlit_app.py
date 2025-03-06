@@ -14,7 +14,6 @@ import time
 import os
 
 
-# 📌 Configuration du navigateur Selenium pour Firefox
 def init_driver():
     firefox_options = Options()
     firefox_options.add_argument("--headless")  # Mode headless obligatoire pour Streamlit Cloud
@@ -25,7 +24,7 @@ def init_driver():
     # (C'est ainsi que cela fonctionnait avant)
 
     # ✅ Télécharger et utiliser Geckodriver automatiquement via WebDriver Manager
-    service = Service(GeckoDriverManager(cache_valid_range=30).install())  # Utilise le cache pendant 30 jours
+    service = Service(GeckoDriverManager().install())
 
     driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
@@ -115,6 +114,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     all_odds = []
 
     for match_url in match_links:
+        print(f"🔍 Scraping des cotes pour : {match_url}")
         driver.get(match_url)
 
         try:
@@ -124,6 +124,10 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         except:
             st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
             continue
+
+        # 🔥 Vérifier que la page a bien changé en regardant le titre du match
+        current_page_title = driver.title
+        print(f"📄 Page actuelle : {current_page_title}")
 
         odds_script = '''
         let oddsData = [];
@@ -142,10 +146,21 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         });
         return oddsData;
         '''
+
+        # 🛠 Solution 1 : Ajouter un `time.sleep(2)` pour s'assurer que la page est bien chargée
+        time.sleep(2)
+
+        # 🛠 Solution 2 : Rafraîchir la page pour éviter un problème de cache
+        driver.refresh()
+        time.sleep(2)
+
+        # 🔥 Vérification des cotes extraites
         odds_list = driver.execute_script(odds_script)
+        print(f"✅ Cotes extraites après rafraîchissement : {odds_list}")
 
         match_name = match_url.split("/")[-1].replace("-", " ").title()
         match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()
+
         for odd in odds_list:
             if odd[0] in selected_bookmakers:
                 all_odds.append([match_name] + odd)
@@ -153,6 +168,8 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     driver.quit()
 
     return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Nul", "2", "Retour"])
+
+
 
 
 # 📌 Interface principale Streamlit
@@ -185,17 +202,19 @@ def main():
         st.title("📊 Scraping des Cotes Football")
 
         # ⚠️ Vérifier que les compétitions sont bien en mémoire avant d'afficher les sélections
-
         if "competitions_df" not in st.session_state or st.session_state["competitions_df"].empty:
             st.warning(
                 "⚠️ Aucune donnée en mémoire. Veuillez d'abord exécuter la récupération des compétitions en mode Admin.")
+
         else:
             competitions_df = st.session_state["competitions_df"]  # Utilisation directe du DataFrame stocké
             selected_competitions = st.multiselect("📌 Sélectionnez les compétitions",
                                                    competitions_df["Compétition"].tolist())
+
             if selected_competitions:
                 all_bookmakers = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin",
                                   "Vbet", "Genybet", "Feelingbet", "Betsson"]
+
                 selected_bookmakers = st.multiselect("🎰 Sélectionnez les bookmakers", all_bookmakers,
                                                      default=all_bookmakers)
                 nb_matchs = st.slider("🔢 Nombre de matchs par compétition", 1, 20, 5)
@@ -225,9 +244,8 @@ def main():
                         trj_mean.index = trj_mean.index + 1
 
                         # ✅ Trier les cotes par match en ordre décroissant de "Retour"
-                        all_odds_df["Match_Order"] = all_odds_df.groupby("Match").ngroup()
-
-                        # Ajoute un identifiant unique pour garder l'ordre original des matchs
+                        all_odds_df["Match_Order"] = all_odds_df.groupby(
+                            "Match").ngroup()  # Ajoute un identifiant unique pour garder l'ordre original des matchs
                         all_odds_df = all_odds_df.sort_values(by=["Match_Order", "Retour"],
                                                               ascending=[False, False]).drop(columns=["Match_Order"])
 
