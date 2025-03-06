@@ -20,15 +20,17 @@ def init_driver():
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
-    # ✅ Spécifier le chemin de Firefox (nécessaire sur Streamlit Cloud)
+    # ✅ Vérifier et spécifier le chemin de Firefox (nécessaire sur Streamlit Cloud)
     firefox_bin_path = "/usr/bin/firefox-esr"
     if os.path.exists(firefox_bin_path):
         firefox_options.binary_location = firefox_bin_path
     else:
         raise FileNotFoundError("Firefox non trouvé sur Streamlit Cloud !")
 
-    # ✅ Installer et utiliser Geckodriver automatiquement
-    service = Service(GeckoDriverManager().install())
+    # ✅ Télécharger et utiliser Geckodriver automatiquement via WebDriver Manager
+    gecko_path = GeckoDriverManager().install()
+    service = Service(gecko_path)
+
     driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
 
