@@ -11,6 +11,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
 from bs4 import BeautifulSoup
 import time
+import os
 
 
 # 📌 Configuration du navigateur Selenium pour Firefox
