@@ -182,7 +182,7 @@ def main():
     if menu_selection == "🔑 Admin":
         admin_password = st.sidebar.text_input("Mot de passe :", type="password")
 
-        if admin_password == "monmotdepasse":
+        if admin_password == "gigtrading2025":
             st.sidebar.success("✅ Accès accordé")
             st.title("🔧 Mode Administrateur")
 
