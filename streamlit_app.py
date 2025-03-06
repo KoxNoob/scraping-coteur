@@ -16,11 +16,12 @@ import time
 # 📌 Configuration du navigateur Selenium pour Firefox
 def init_driver():
     firefox_options = Options()
-    firefox_options.add_argument("--headless")  # Mode sans interface graphique
+    firefox_options.add_argument("--headless")  # Mode headless obligatoire pour Streamlit Cloud
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
-    service = Service(GeckoDriverManager().install())  # Utilisation de webdriver-manager
+    # ✅ Installe et utilise Geckodriver automatiquement
+    service = Service(GeckoDriverManager().install())
     driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
 
