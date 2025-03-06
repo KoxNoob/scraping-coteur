@@ -25,7 +25,7 @@ def init_driver():
     # (C'est ainsi que cela fonctionnait avant)
 
     # ✅ Télécharger et utiliser Geckodriver automatiquement via WebDriver Manager
-    service = Service(GeckoDriverManager().install())
+    service = Service(GeckoDriverManager(cache_valid_range=30).install())  # Utilise le cache pendant 30 jours
 
     driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
