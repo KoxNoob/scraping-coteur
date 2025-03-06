@@ -1,45 +1,26 @@
 import streamlit as st
 import json
 import re
-import os
 import pandas as pd
 from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.firefox.service import Service
+from selenium.webdriver.firefox.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from webdriver_manager.firefox import GeckoDriverManager
 from bs4 import BeautifulSoup
 import time
 
 
-# 📌 Configuration du navigateur Selenium
-from selenium import webdriver
-from selenium.webdriver.chrome.service import Service
-from selenium.webdriver.chrome.options import Options
-
-
+# 📌 Configuration du navigateur Selenium pour Firefox
 def init_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--log-level=3")
+    firefox_options = Options()
+    firefox_options.add_argument("--headless")  # Mode sans interface graphique
+    firefox_options.add_argument("--no-sandbox")
+    firefox_options.add_argument("--disable-dev-shm-usage")
 
-    # 🔹 Vérifier que Chrome et ChromeDriver existent bien
-    chrome_bin = os.environ.get("GOOGLE_CHROME_BIN", "/app/.apt/usr/bin/google-chrome")
-    chromedriver_path = os.environ.get("CHROMEDRIVER_PATH", "/app/.chromedriver/bin/chromedriver")
-
-    if not os.path.exists(chrome_bin):
-        raise FileNotFoundError(f"Chrome introuvable à {chrome_bin}")
-
-    if not os.path.exists(chromedriver_path):
-        raise FileNotFoundError(f"ChromeDriver introuvable à {chromedriver_path}")
-
-    chrome_options.binary_location = chrome_bin
-    driver = webdriver.Chrome(service=Service(chromedriver_path), options=chrome_options)
-
+    driver = webdriver.Firefox(service=Service(GeckoDriverManager().install()), options=firefox_options)
     return driver
 
 
@@ -76,13 +57,22 @@ def get_competitions():
                     competition_name = competition.text.strip()
                     competition_url = "https://www.coteur.com" + competition["href"]
                     competitions_list.append(
-                        {"Pays": country_name, "Compétition": competition_name, "URL": competition_url})
+                        {"Pays": country_name, "Compétition": f"{competition_name} ({country_name})",
+                         "URL": competition_url}
+                    )
 
         except Exception as e:
             print(f"⚠️ Erreur lors de l'ouverture de {country_name} : {e}")
 
     driver.quit()
-    return pd.DataFrame(competitions_list)
+
+    competitions_df = pd.DataFrame(competitions_list)
+    competitions_df = competitions_df.sort_values(
+        by=["Pays", "Compétition"],
+        key=lambda x: x.map(lambda y: ("" if y == "France" else y))
+    )
+
+    return competitions_df
 
 
 # 📌 Scraper les cotes d'une compétition
@@ -111,7 +101,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
                     match_links.append(corrected_url)
             except json.JSONDecodeError:
                 continue
-    # ✅ Limite le nombre de matchs récupérés à ce que l'utilisateur a choisi
+
     match_links = match_links[:nb_matchs]
 
     all_odds = []
@@ -147,7 +137,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         odds_list = driver.execute_script(odds_script)
 
         match_name = match_url.split("/")[-1].replace("-", " ").title()
-        match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()  # ✅ Enlève les chiffres et "#Cote"
+        match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()
         for odd in odds_list:
             if odd[0] in selected_bookmakers:
                 all_odds.append([match_name] + odd)
@@ -161,7 +151,6 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
 def main():
     st.set_page_config(page_title="Scraping des Cotes", page_icon="⚽", layout="wide")
 
-    # 📌 Menu latéral
     st.sidebar.title("📌 Menu")
     selected_sport = st.sidebar.radio("Choisissez un sport", ["⚽ Football", "🏀⚾🎾 Autres Sports"])
 
@@ -175,11 +164,8 @@ def main():
 
         if "competitions_df" in st.session_state:
             competitions_df = st.session_state["competitions_df"]
-            st.subheader("📌 Sélectionnez les compétitions à analyser")
-            selected_competitions = st.multiselect(
-                "Choisissez les compétitions",
-                competitions_df["Compétition"].tolist()
-            )
+            selected_competitions = st.multiselect("Choisissez les compétitions",
+                                                   competitions_df["Compétition"].tolist())
 
             if selected_competitions:
                 all_bookmakers = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin",
@@ -187,46 +173,25 @@ def main():
                 selected_bookmakers = st.multiselect("Sélectionnez les bookmakers", all_bookmakers,
                                                      default=all_bookmakers)
 
-                nb_matchs = st.slider("🔢 Nombre de matchs à récupérer par compétition", min_value=1, max_value=20,
-                                      value=5)
+                nb_matchs = st.slider("🔢 Nombre de matchs", 1, 20, 5)
 
-                if st.button("🔍 Lancer le scraping des cotes"):
-                    with st.spinner("Scraping en cours..."):
-                        all_odds_df = pd.concat([
-                            get_match_odds(
-                                competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
-                                selected_bookmakers,
-                                nb_matchs  # ✅ Passer nb_matchs à la fonction
-                            )
+                if st.button("🔍 Lancer le scraping"):
+                    all_odds_df = pd.concat([get_match_odds(
+                        competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
+                        selected_bookmakers, nb_matchs) for comp in selected_competitions])
 
-                            for comp in selected_competitions
-                        ])
                     if not all_odds_df.empty:
-                        # ✅ Convertir la colonne "Retour" en float
-                        all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").astype(float)
-
-                        # 🔹 Moyennes TRJ par opérateur
-                        trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index()
-                        trj_mean.columns = ["Bookmaker", "Moyenne TRJ"]
-
-                        # Trier les TRJ en ordre décroissant + décimale = 2
-                        trj_mean = trj_mean.sort_values(by="Moyenne TRJ", ascending=False)
-                        trj_mean["Moyenne TRJ"] = trj_mean["Moyenne TRJ"].apply(lambda x: f"{x:.2f}%")
-
-                        # 🔹 Affichage des moyennes TRJ
+                        all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").str.replace(",", ".").astype(
+                            float)
+                        trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index().sort_values(
+                            by="Retour", ascending=False)
+                        trj_mean["Retour"] = trj_mean["Retour"].apply(lambda x: f"{x:.2f}%")
                         st.subheader("📊 Moyenne des TRJ par opérateur")
                         st.dataframe(trj_mean)
 
-                    st.subheader("📌 Cotes récupérées")
-                    st.dataframe(all_odds_df)
+                        st.subheader("📌 Cotes récupérées")
+                        st.dataframe(all_odds_df)
 
 
-    else:
-        st.title("🏀⚾🎾 Autres Sports")
-        st.image("https://upload.wikimedia.org/wikipedia/commons/3/3a/Under_construction_icon-yellow.svg",
-                 caption="🚧 En cours de développement...", use_column_width=True)
-
-
-# Exécution de l'application Streamlit
 if __name__ == "__main__":
     main()
