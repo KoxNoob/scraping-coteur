@@ -12,7 +12,7 @@ from webdriver_manager.firefox import GeckoDriverManager
 import time
 
 # 📌 Chargement des compétitions depuis un fichier CSV
-def load_competitions_from_csv(csv_path="competitions_foot.csv"):
+def load_competitions_from_csv(csv_path="URL Compétitions Football.csv"):
     try:
         competitions_df = pd.read_csv(csv_path)
         if "Pays" not in competitions_df.columns or "Compétition" not in competitions_df.columns or "URL" not in competitions_df.columns:
