@@ -11,6 +11,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
 
+# Pour tester branche
 
 # 📌 Chargement des compétitions depuis un fichier CSV
 def load_competitions_from_csv(csv_path="URL Compétitions Football.csv"):
