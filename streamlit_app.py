@@ -43,7 +43,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     driver.get(competition_url)
 
     try:
-        WebDriverWait(driver, 5).until(
+        WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located((By.TAG_NAME, "script"))
         )
     except:
@@ -72,18 +72,34 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         print(f"🔍 Scraping des cotes pour : {match_url}")
         driver.get(match_url)
 
+        # 🔄 Vérifier que le bon match est bien affiché avant d'extraire les cotes
+        expected_match_name = match_url.split("/")[-1].replace("-", " ").title()
+        expected_match_name = re.sub(r'\s*\d+#Cote\s*$', '', expected_match_name).strip()
+
+        max_retries = 3
+        for attempt in range(max_retries):
+            time.sleep(3)  # Laisser du temps au chargement
+            current_page_title = driver.title.strip()
+
+            print(f"📄 Page actuelle : {current_page_title}")
+
+            if expected_match_name.lower() in current_page_title.lower():
+                print(f"✅ Match correct détecté : {current_page_title}")
+                break
+            else:
+                print("🔄 La page semble incorrecte, tentative de rafraîchissement...")
+                driver.refresh()
+
         try:
-            WebDriverWait(driver, 5).until(
+            WebDriverWait(driver, 10).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.bookline"))
             )
+            time.sleep(2)
         except:
-            st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
+            print(f"⚠️ Aucune cote trouvée après tentative de récupération pour {match_url}")
             continue
 
-        # 🔥 Vérifier que la page a bien changé en regardant le titre du match
-        current_page_title = driver.title
-        print(f"📄 Page actuelle : {current_page_title}")
-
+        # 🔥 Extraction des cotes
         odds_script = '''
         let oddsData = [];
         document.querySelectorAll("div.bookline").forEach(row => {
@@ -102,17 +118,28 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         return oddsData;
         '''
 
-        # 🛠 Ajouter un temps d'attente pour éviter les chargements incomplets
-        time.sleep(2)
-        driver.refresh()
-        time.sleep(2)
-
-        # 🔥 Vérification des cotes extraites
         odds_list = driver.execute_script(odds_script)
-        print(f"✅ Cotes extraites après rafraîchissement : {odds_list}")
 
-        match_name = match_url.split("/")[-1].replace("-", " ").title()
-        match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()
+        # 🔄 Vérifier que les cotes sont bien extraites
+        if not odds_list:
+            print(f"⚠️ Aucune cote détectée pour {match_url}, nouvelle tentative...")
+            for retry in range(2):
+                driver.refresh()
+                time.sleep(5)
+                odds_list = driver.execute_script(odds_script)
+                if odds_list:
+                    print(f"✅ Cotes récupérées après {retry+1} tentative(s) : {odds_list}")
+                    break
+                else:
+                    print(f"⚠️ Tentative {retry+1} échouée, nouvelle tentative...")
+
+        if not odds_list:
+            print(f"❌ Aucune cote trouvée pour {match_url} après plusieurs tentatives.")
+            st.warning(f"⚠️ Aucune cote trouvée pour [{match_url}]({match_url})")
+            continue
+
+        # 🔥 Vérification et enregistrement des cotes
+        match_name = expected_match_name
 
         for odd in odds_list:
             if odd[0] in selected_bookmakers:
@@ -121,6 +148,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     driver.quit()
 
     return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Nul", "2", "Retour"])
+
 
 
 # 📌 Interface principale Streamlit
