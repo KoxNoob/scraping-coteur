@@ -45,7 +45,6 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     driver.get(competition_url)
 
     try:
-        # Attendre jusqu'à ce que les scripts des matchs soient bien chargés
         WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located((By.TAG_NAME, "script"))
         )
@@ -68,52 +67,61 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
                 continue
 
     match_links = match_links[:nb_matchs]
-
     all_odds = []
 
     for match_url in match_links:
         print(f"🔍 Scraping des cotes pour : {match_url}")
         driver.get(match_url)
 
+        # 🔄 Vérifier que la page a bien changé avant d'extraire les cotes
+        previous_title = driver.title  # Stocke le titre précédent
+
+        for attempt in range(3):  # 3 tentatives max pour s'assurer que la page change
+            time.sleep(3)  # Laisser le temps de chargement
+            if driver.title != previous_title:
+                print(f"✅ Changement détecté -> Nouveau match : {driver.title}")
+                break
+            else:
+                print("🔄 La page semble inchangée, tentative de rafraîchissement...")
+                driver.refresh()
+
         try:
-            # Nouvelle attente optimisée des cotes avec WebDriverWait
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 15).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.bookline"))
             )
+            time.sleep(3)  # Délai supplémentaire pour éviter les pages incomplètes
         except:
             st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
             continue
 
-        # 🛠️ Vérification du bon chargement de la page
+        odds_script = '''
+        let oddsData = [];
+        document.querySelectorAll("div.bookline").forEach(row => {
+            let bookmaker = row.getAttribute("data-name");
+            let odds = row.querySelectorAll("div.odds-col");
+            let payoutElem = row.querySelector("div.border.bg-warning.payout");
+            let payout = payoutElem ? payoutElem.innerText.trim() : "N/A";
+
+            if (odds.length >= 3) {
+                let odd_1 = odds[0].innerText.trim();
+                let odd_n = odds[1].innerText.trim();
+                let odd_2 = odds[2].innerText.trim();
+                oddsData.push([bookmaker, odd_1, odd_n, odd_2, payout]);
+            }
+        });
+        return oddsData;
+        '''
+
+        # 🔄 Retenter jusqu'à obtenir des cotes correctes
         max_retries = 3
         for attempt in range(max_retries):
             print(f"🔄 Tentative {attempt + 1} de récupération des cotes...")
-            time.sleep(2)  # Laisse le temps aux cotes de charger
-
-            odds_script = '''
-            let oddsData = [];
-            document.querySelectorAll("div.bookline").forEach(row => {
-                let bookmaker = row.getAttribute("data-name");
-                let odds = row.querySelectorAll("div.odds-col");
-                let payoutElem = row.querySelector("div.border.bg-warning.payout");
-                let payout = payoutElem ? payoutElem.innerText.trim() : "N/A";
-
-                if (odds.length >= 3) {
-                    let odd_1 = odds[0].innerText.trim();
-                    let odd_n = odds[1].innerText.trim();
-                    let odd_2 = odds[2].innerText.trim();
-                    oddsData.push([bookmaker, odd_1, odd_n, odd_2, payout]);
-                }
-            });
-            return oddsData;
-            '''
-
+            time.sleep(2)
             odds_list = driver.execute_script(odds_script)
 
-            # Vérification que des cotes ont bien été extraites
             if odds_list:
                 print(f"✅ Cotes récupérées : {odds_list}")
-                break  # Sort de la boucle si les cotes sont trouvées
+                break
             elif attempt < max_retries - 1:
                 print("⚠️ Aucune cote détectée, tentative de rafraîchissement...")
                 driver.refresh()
@@ -126,11 +134,12 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
 
         for odd in odds_list:
             if odd[0] in selected_bookmakers:
-                all_odds.append([match_name] + odd)
+                all_odds.append([match_name] + odd])
 
     driver.quit()
 
     return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Nul", "2", "Retour"])
+
 
 
 
