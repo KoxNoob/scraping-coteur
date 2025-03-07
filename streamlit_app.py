@@ -134,7 +134,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
 
         for odd in odds_list:
             if odd[0] in selected_bookmakers:
-                all_odds.append([match_name] + odd])
+                all_odds.append([match_name] + odd)
 
     driver.quit()
 
