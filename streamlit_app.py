@@ -71,25 +71,26 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
 
     for match_url in match_links:
         print(f"🔍 Scraping des cotes pour : {match_url}")
+        driver.delete_all_cookies()  # 🔥 Nettoyer le cache du navigateur avant de changer de match
         driver.get(match_url)
 
-        # 🔄 Vérifier que la page a bien changé avant d'extraire les cotes
-        previous_title = driver.title  # Stocke le titre précédent
-
-        for attempt in range(3):  # 3 tentatives max pour s'assurer que la page change
-            time.sleep(3)  # Laisser le temps de chargement
+        # 🔄 Attendre que le titre change (évite de récupérer les cotes de la page précédente)
+        previous_title = driver.title
+        for attempt in range(3):
+            time.sleep(3)
             if driver.title != previous_title:
-                print(f"✅ Changement détecté -> Nouveau match : {driver.title}")
+                print(f"✅ Page bien mise à jour -> {driver.title}")
                 break
             else:
-                print("🔄 La page semble inchangée, tentative de rafraîchissement...")
+                print("🔄 Tentative de rafraîchissement...")
                 driver.refresh()
 
         try:
+            # 🔥 Attendre que l'en-tête du match change (et pas juste les cotes)
             WebDriverWait(driver, 15).until(
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.bookline"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "h1.match-title"))
             )
-            time.sleep(3)  # Délai supplémentaire pour éviter les pages incomplètes
+            time.sleep(3)  # Petit délai en plus pour s'assurer que tout est bien chargé
         except:
             st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
             continue
@@ -112,25 +113,25 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         return oddsData;
         '''
 
-        # 🔄 Retenter jusqu'à obtenir des cotes correctes
         max_retries = 3
+        last_odds_list = []
         for attempt in range(max_retries):
-            print(f"🔄 Tentative {attempt + 1} de récupération des cotes...")
             time.sleep(2)
             odds_list = driver.execute_script(odds_script)
 
-            if odds_list:
+            # 🔄 Vérifier si on obtient des cotes différentes de celles du match précédent
+            if odds_list and odds_list != last_odds_list:
                 print(f"✅ Cotes récupérées : {odds_list}")
+                last_odds_list = odds_list  # Stocker les dernières cotes pour comparaison
                 break
             elif attempt < max_retries - 1:
-                print("⚠️ Aucune cote détectée, tentative de rafraîchissement...")
+                print("⚠️ Aucune nouvelle cote détectée, tentative de rafraîchissement...")
                 driver.refresh()
             else:
                 print("❌ Échec de la récupération des cotes après plusieurs tentatives.")
                 st.warning(f"⚠️ Impossible de récupérer les cotes pour {match_url}")
 
-        match_name = match_url.split("/")[-1].replace("-", " ").title()
-        match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()
+        match_name = driver.find_element(By.CSS_SELECTOR, "h1.match-title").text.strip()
 
         for odd in odds_list:
             if odd[0] in selected_bookmakers:
@@ -139,6 +140,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     driver.quit()
 
     return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Nul", "2", "Retour"])
+
 
 
 
