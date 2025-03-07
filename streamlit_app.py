@@ -9,32 +9,77 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
+from bs4 import BeautifulSoup
 import time
-
-# 📌 Chargement des compétitions depuis un fichier CSV
-def load_competitions_from_csv(csv_path="URL Compétitions Football.csv"):
-    try:
-        competitions_df = pd.read_csv(csv_path)
-        if "Pays" not in competitions_df.columns or "Compétition" not in competitions_df.columns or "URL" not in competitions_df.columns:
-            st.error("⚠️ Le fichier CSV doit contenir les colonnes : 'Pays', 'Compétition', 'URL'.")
-            return None
-        st.session_state["competitions_df"] = competitions_df
-        return competitions_df
-    except Exception as e:
-        st.error(f"⚠️ Erreur lors du chargement du fichier CSV : {e}")
-        return None
+import os
 
 
-# 📌 Fonction d'initialisation du WebDriver
 def init_driver():
     firefox_options = Options()
-    firefox_options.add_argument("--headless")  # Mode headless pour Streamlit Cloud
+    firefox_options.add_argument("--headless")  # Mode headless obligatoire pour Streamlit Cloud
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
+    # ✅ NE PAS définir binary_location pour laisser Selenium détecter Firefox automatiquement
+    # (C'est ainsi que cela fonctionnait avant)
+
+    # ✅ Télécharger et utiliser Geckodriver automatiquement via WebDriver Manager
     service = Service(GeckoDriverManager().install())
+
     driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
+
+
+# 📌 Récupération des compétitions de football (disponible uniquement en mode Admin)
+def get_competitions():
+    driver = init_driver()
+    url = "https://www.coteur.com/cotes-foot"
+    driver.get(url)
+
+    WebDriverWait(driver, 10).until(
+        EC.presence_of_element_located((By.CLASS_NAME, "nav.flex-column.list-group.list-group-flush"))
+    )
+
+    country_buttons = driver.find_elements(By.CSS_SELECTOR, "a.list-group-item.list-group-item-action.d-flex")
+
+    competitions_list = []
+
+    for button in country_buttons:
+        try:
+            country_name = button.text.strip()
+            driver.execute_script("arguments[0].click();", button)
+            time.sleep(2)
+
+            sub_menu_id = button.get_attribute("data-bs-target").replace("#", "")
+            WebDriverWait(driver, 5).until(
+                EC.visibility_of_element_located((By.ID, sub_menu_id))
+            )
+
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            competition_menu = soup.find("ul", id=sub_menu_id)
+
+            if competition_menu:
+                for competition in competition_menu.find_all("a", class_="list-group-item-action"):
+                    competition_name = competition.text.strip()
+                    competition_url = "https://www.coteur.com" + competition["href"]
+                    competitions_list.append(
+                        {"Pays": country_name, "Compétition": f"{competition_name} ({country_name})",
+                         "URL": competition_url}
+                    )
+
+        except Exception as e:
+            print(f"⚠️ Erreur lors de l'ouverture de {country_name} : {e}")
+
+    driver.quit()
+
+    competitions_df = pd.DataFrame(competitions_list)
+    competitions_df = competitions_df.sort_values(
+        by=["Pays", "Compétition"],
+        key=lambda x: x.map(lambda y: ("" if y == "France" else y))
+    )
+
+    # Stocker les compétitions en mémoire
+    st.session_state["competitions_df"] = competitions_df
 
 
 # 📌 Scraper les cotes d'une compétition
@@ -43,7 +88,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     driver.get(competition_url)
 
     try:
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 5).until(
             EC.presence_of_all_elements_located((By.TAG_NAME, "script"))
         )
     except:
@@ -72,34 +117,18 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         print(f"🔍 Scraping des cotes pour : {match_url}")
         driver.get(match_url)
 
-        # 🔄 Vérifier que le bon match est bien affiché avant d'extraire les cotes
-        expected_match_name = match_url.split("/")[-1].replace("-", " ").title()
-        expected_match_name = re.sub(r'\s*\d+#Cote\s*$', '', expected_match_name).strip()
-
-        max_retries = 3
-        for attempt in range(max_retries):
-            time.sleep(3)  # Laisser du temps au chargement
-            current_page_title = driver.title.strip()
-
-            print(f"📄 Page actuelle : {current_page_title}")
-
-            if expected_match_name.lower() in current_page_title.lower():
-                print(f"✅ Match correct détecté : {current_page_title}")
-                break
-            else:
-                print("🔄 La page semble incorrecte, tentative de rafraîchissement...")
-                driver.refresh()
-
         try:
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 5).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.bookline"))
             )
-            time.sleep(2)
         except:
-            print(f"⚠️ Aucune cote trouvée après tentative de récupération pour {match_url}")
+            st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
             continue
 
-        # 🔥 Extraction des cotes
+        # 🔥 Vérifier que la page a bien changé en regardant le titre du match
+        current_page_title = driver.title
+        print(f"📄 Page actuelle : {current_page_title}")
+
         odds_script = '''
         let oddsData = [];
         document.querySelectorAll("div.bookline").forEach(row => {
@@ -118,28 +147,19 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
         return oddsData;
         '''
 
+        # 🛠 Solution 1 : Ajouter un `time.sleep(2)` pour s'assurer que la page est bien chargée
+        time.sleep(2)
+
+        # 🛠 Solution 2 : Rafraîchir la page pour éviter un problème de cache
+        driver.refresh()
+        time.sleep(2)
+
+        # 🔥 Vérification des cotes extraites
         odds_list = driver.execute_script(odds_script)
+        print(f"✅ Cotes extraites après rafraîchissement : {odds_list}")
 
-        # 🔄 Vérifier que les cotes sont bien extraites
-        if not odds_list:
-            print(f"⚠️ Aucune cote détectée pour {match_url}, nouvelle tentative...")
-            for retry in range(2):
-                driver.refresh()
-                time.sleep(5)
-                odds_list = driver.execute_script(odds_script)
-                if odds_list:
-                    print(f"✅ Cotes récupérées après {retry+1} tentative(s) : {odds_list}")
-                    break
-                else:
-                    print(f"⚠️ Tentative {retry+1} échouée, nouvelle tentative...")
-
-        if not odds_list:
-            print(f"❌ Aucune cote trouvée pour {match_url} après plusieurs tentatives.")
-            st.warning(f"⚠️ Aucune cote trouvée pour [{match_url}]({match_url})")
-            continue
-
-        # 🔥 Vérification et enregistrement des cotes
-        match_name = expected_match_name
+        match_name = match_url.split("/")[-1].replace("-", " ").title()
+        match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()
 
         for odd in odds_list:
             if odd[0] in selected_bookmakers:
@@ -151,24 +171,43 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
 
 
 
+
 # 📌 Interface principale Streamlit
 def main():
     st.set_page_config(page_title="Scraping des Cotes", page_icon="⚽", layout="wide")
 
     st.sidebar.title("📌 Menu")
-    menu_selection = st.sidebar.radio("Choisissez un mode", ["🏠 Accueil", "⚽ Football"])
+    menu_selection = st.sidebar.radio("Choisissez un mode", ["🏠 Accueil", "⚽ Football", "🔑 Admin"])
 
-    if menu_selection == "⚽ Football":
+    if menu_selection == "🔑 Admin":
+        admin_password = st.sidebar.text_input("Mot de passe :", type="password")
+
+        if admin_password == "gigtrading2025":
+            st.sidebar.success("✅ Accès accordé")
+            st.title("🔧 Mode Administrateur")
+
+            if st.button("📌 Récupérer les compétitions disponibles"):
+                with st.spinner("Chargement des compétitions..."):
+                    get_competitions()
+                st.success("✅ Compétitions mises à jour !")
+
+            if "competitions_df" in st.session_state:
+                st.dataframe(st.session_state["competitions_df"])
+            else:
+                st.warning("⚠️ Aucune donnée en mémoire. Veuillez récupérer les compétitions.")
+
+
+    elif menu_selection == "⚽ Football":
+
         st.title("📊 Scraping des Cotes Football")
 
-        # 📌 Charger les compétitions depuis le fichier CSV au démarrage
-        if "competitions_df" not in st.session_state:
-            load_competitions_from_csv()
-
+        # ⚠️ Vérifier que les compétitions sont bien en mémoire avant d'afficher les sélections
         if "competitions_df" not in st.session_state or st.session_state["competitions_df"].empty:
-            st.warning("⚠️ Aucune donnée en mémoire. Vérifiez le fichier CSV.")
+            st.warning(
+                "⚠️ Aucune donnée en mémoire. Veuillez d'abord exécuter la récupération des compétitions en mode Admin.")
+
         else:
-            competitions_df = st.session_state["competitions_df"]
+            competitions_df = st.session_state["competitions_df"]  # Utilisation directe du DataFrame stocké
             selected_competitions = st.multiselect("📌 Sélectionnez les compétitions",
                                                    competitions_df["Compétition"].tolist())
 
@@ -191,7 +230,8 @@ def main():
 
                     if not all_odds_df.empty:
                         # ✅ Convertir la colonne "Retour" en float pour le tri et l'affichage
-                        all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").str.replace(",", ".").astype(float)
+                        all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").str.replace(",", ".").astype(
+                            float)
 
                         # ✅ Calculer la moyenne des TRJ par opérateur (trié en décroissant)
                         trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index()
@@ -199,10 +239,21 @@ def main():
                         trj_mean = trj_mean.sort_values(by="Moyenne TRJ", ascending=False)
                         trj_mean["Moyenne TRJ"] = trj_mean["Moyenne TRJ"].apply(lambda x: f"{x:.2f}%")
 
-                        # 🔹 Affichage des moyennes TRJ et des cotes
+                        # ✅ Réinitialiser l'index en partant de 1
+                        trj_mean.reset_index(drop=True, inplace=True)
+                        trj_mean.index = trj_mean.index + 1
+
+                        # ✅ Trier les cotes par match en ordre décroissant de "Retour"
+                        all_odds_df["Match_Order"] = all_odds_df.groupby(
+                            "Match").ngroup()  # Ajoute un identifiant unique pour garder l'ordre original des matchs
+                        all_odds_df = all_odds_df.sort_values(by=["Match_Order", "Retour"],
+                                                              ascending=[False, False]).drop(columns=["Match_Order"])
+
+                        # 🔹 Affichage des moyennes TRJ
                         st.subheader("📊 Moyenne des TRJ par opérateur")
                         st.dataframe(trj_mean)
 
+                        # 🔹 Affichage des cotes triées par match
                         st.subheader("📌 Cotes récupérées")
                         st.dataframe(all_odds_df)
 
