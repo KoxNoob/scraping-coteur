@@ -147,7 +147,7 @@ def main():
             st.session_state["competitions_df"] = competitions_df
 
             selected_competitions = st.multiselect("📌 Select competitions",
-                                                   competitions_df["Competition"].tolist())
+                                                   competitions_df["Compétition"].tolist())
 
             if selected_competitions:
                 all_bookmakers = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin",
