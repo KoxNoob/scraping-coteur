@@ -161,7 +161,7 @@ def main():
                     with st.spinner("Scraping in progress..."):
                         all_odds_df = pd.concat([
                             get_match_odds(
-                                competitions_df.loc[competitions_df["Competition"] == comp, "URL"].values[0],
+                                competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
                                 selected_bookmakers, nb_matchs
                             ) for comp in selected_competitions
                         ], ignore_index=True)
