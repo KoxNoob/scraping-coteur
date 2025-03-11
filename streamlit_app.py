@@ -28,7 +28,10 @@ def init_driver():
 def get_competitions_from_sheets():
     # ✅ Charger les credentials depuis les secrets Streamlit
     credentials_dict = st.secrets["GOOGLE_SHEET_CREDENTIALS"]
-    credentials = Credentials.from_service_account_info(credentials_dict)
+    credentials = Credentials.from_service_account_info(
+        credentials_dict,
+        scopes=["https://www.googleapis.com/auth/spreadsheets.readonly"]
+    )
     client = gspread.authorize(credentials)
 
     # 🔗 ID du Google Sheet et nom de l'onglet
