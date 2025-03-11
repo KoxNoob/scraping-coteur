@@ -13,10 +13,10 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
 
-# 📌 Fonction pour initialiser Selenium
+# 📌 Function to initialize Selenium
 def init_driver():
     firefox_options = Options()
-    firefox_options.add_argument("--headless")  # Mode headless pour Streamlit Cloud
+    firefox_options.add_argument("--headless")  # Headless mode required for Streamlit Cloud
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
@@ -24,9 +24,9 @@ def init_driver():
     driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
 
-# 📌 Fonction pour récupérer les compétitions depuis Google Sheets
+# 📌 Function to retrieve competitions from Google Sheets
 def get_competitions_from_sheets():
-    # ✅ Charger les credentials depuis les secrets Streamlit
+    # ✅ Load credentials from Streamlit secrets
     credentials_dict = st.secrets["GOOGLE_SHEET_CREDENTIALS"]
     credentials = Credentials.from_service_account_info(
         credentials_dict,
@@ -34,7 +34,7 @@ def get_competitions_from_sheets():
     )
     client = gspread.authorize(credentials)
 
-    # 🔗 ID du Google Sheet et nom de l'onglet
+    # 🔗 Google Sheet ID and worksheet name
     SPREADSHEET_ID = "16ZBhF4k4ah-zhc3QcH7IEWLXrhbT8TRTMi5BptCFIcM"
     SHEET_NAME = "Football"
 
@@ -42,19 +42,19 @@ def get_competitions_from_sheets():
     data = sheet.get_all_records()
     competitions_df = pd.DataFrame(data)
 
-    required_columns = {"Pays", "Compétition", "URL"}
+    required_columns = {"Country", "Competition", "URL"}
     if not required_columns.issubset(competitions_df.columns):
-        st.error("❌ Le Google Sheet ne contient pas les colonnes requises : Pays, Compétition, URL")
+        st.error("❌ The Google Sheet does not contain the required columns: Country, Competition, URL")
         return pd.DataFrame()
 
     competitions_df = competitions_df.sort_values(
-        by=["Pays", "Compétition"],
+        by=["Country", "Competition"],
         key=lambda x: x.map(lambda y: ("" if y == "France" else y))
     )
 
     return competitions_df
 
-# 📌 Scraper les cotes d'une compétition
+# 📌 Function to scrape betting odds for a competition
 def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
     driver = init_driver()
     driver.get(competition_url)
@@ -64,7 +64,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
             EC.presence_of_all_elements_located((By.TAG_NAME, "script"))
         )
     except:
-        st.warning(f"⚠️ Aucun match trouvé pour {competition_url}")
+        st.warning(f"⚠️ No matches found for {competition_url}")
         return pd.DataFrame()
 
     scripts = driver.find_elements(By.TAG_NAME, "script")
@@ -92,7 +92,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.bookline"))
             )
         except:
-            st.warning(f"⚠️ Aucune cote trouvée pour {match_url}")
+            st.warning(f"⚠️ No odds found for {match_url}")
             continue
 
         time.sleep(2)
@@ -126,58 +126,58 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs):
                 all_odds.append([match_name] + odd)
 
     driver.quit()
-    return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Nul", "2", "Retour"])
+    return pd.DataFrame(all_odds, columns=["Match", "Bookmaker", "1", "Draw", "2", "Payout"])
 
-# 📌 Interface principale Streamlit
+# 📌 Streamlit main interface
 def main():
-    st.set_page_config(page_title="Scraping des Cotes", page_icon="⚽", layout="wide")
+    st.set_page_config(page_title="Betting Odds Scraper", page_icon="⚽", layout="wide")
 
     st.sidebar.title("📌 Menu")
-    menu_selection = st.sidebar.radio("Choisissez un mode", ["🏠 Accueil", "⚽ Football", "🔑 Admin"])
+    menu_selection = st.sidebar.radio("Choose a mode", ["🏠 Home", "⚽ Football", "🔑 Admin"])
 
     if menu_selection == "⚽ Football":
-        st.title("📊 Scraping des Cotes Football")
+        st.title("📊 Football Betting Odds Scraper")
 
-        with st.spinner("🔄 Chargement des compétitions depuis Google Sheets..."):
+        with st.spinner("🔄 Loading competitions from Google Sheets..."):
             competitions_df = get_competitions_from_sheets()
 
         if competitions_df.empty:
-            st.warning("⚠️ Aucune compétition trouvée dans Google Sheets.")
+            st.warning("⚠️ No competition data found in Google Sheets.")
         else:
             st.session_state["competitions_df"] = competitions_df
 
-            selected_competitions = st.multiselect("📌 Sélectionnez les compétitions",
-                                                   competitions_df["Compétition"].tolist())
+            selected_competitions = st.multiselect("📌 Select competitions",
+                                                   competitions_df["Competition"].tolist())
 
             if selected_competitions:
                 all_bookmakers = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin",
                                   "Vbet", "Genybet", "Feelingbet", "Betsson"]
 
-                selected_bookmakers = st.multiselect("🎰 Sélectionnez les bookmakers", all_bookmakers,
+                selected_bookmakers = st.multiselect("🎰 Select bookmakers", all_bookmakers,
                                                      default=all_bookmakers)
-                nb_matchs = st.slider("🔢 Nombre de matchs par compétition", 1, 20, 5)
+                nb_matchs = st.slider("🔢 Number of matches per competition", 1, 20, 5)
 
-                if st.button("🔍 Lancer le scraping"):
-                    with st.spinner("Scraping en cours..."):
+                if st.button("🔍 Start scraping"):
+                    with st.spinner("Scraping in progress..."):
                         all_odds_df = pd.concat([
                             get_match_odds(
-                                competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
+                                competitions_df.loc[competitions_df["Competition"] == comp, "URL"].values[0],
                                 selected_bookmakers, nb_matchs
                             ) for comp in selected_competitions
                         ], ignore_index=True)
 
                     if not all_odds_df.empty:
-                        all_odds_df["Retour"] = all_odds_df["Retour"].str.replace("%", "").str.replace(",", ".").astype(float)
+                        all_odds_df["Payout"] = all_odds_df["Payout"].str.replace("%", "").str.replace(",", ".").astype(float)
 
-                        trj_mean = all_odds_df.groupby("Bookmaker")["Retour"].mean().reset_index()
-                        trj_mean.columns = ["Bookmaker", "Moyenne TRJ"]
-                        trj_mean = trj_mean.sort_values(by="Moyenne TRJ", ascending=False)
-                        trj_mean["Moyenne TRJ"] = trj_mean["Moyenne TRJ"].apply(lambda x: f"{x:.2f}%")
+                        trj_mean = all_odds_df.groupby("Bookmaker")["Payout"].mean().reset_index()
+                        trj_mean.columns = ["Bookmaker", "Average Payout"]
+                        trj_mean = trj_mean.sort_values(by="Average Payout", ascending=False)
+                        trj_mean["Average Payout"] = trj_mean["Average Payout"].apply(lambda x: f"{x:.2f}%")
 
-                        st.subheader("📊 Moyenne des TRJ par opérateur")
+                        st.subheader("📊 Average Payout by Operator")
                         st.dataframe(trj_mean)
 
-                        st.subheader("📌 Cotes récupérées")
+                        st.subheader("📌 Retrieved Odds")
                         st.dataframe(all_odds_df)
 
 if __name__ == "__main__":
