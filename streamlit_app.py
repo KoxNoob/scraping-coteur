@@ -27,7 +27,7 @@ def init_driver():
 # 📌 Fonction pour récupérer les compétitions depuis Google Sheets
 def get_competitions_from_sheets():
     # ✅ Charger les credentials depuis les secrets Streamlit
-    credentials_dict = json.loads(st.secrets["GOOGLE_SHEET_CREDENTIALS"])
+    credentials_dict = st.secrets["GOOGLE_SHEET_CREDENTIALS"]
     credentials = Credentials.from_service_account_info(credentials_dict)
     client = gspread.authorize(credentials)
 
