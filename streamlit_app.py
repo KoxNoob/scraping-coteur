@@ -26,9 +26,12 @@ def init_driver():
 
 # 📌 Fonction pour récupérer les compétitions depuis Google Sheets
 def get_competitions_from_sheets():
-    credentials = Credentials.from_service_account_file("credentials.json", scopes=["https://www.googleapis.com/auth/spreadsheets"])
+    # ✅ Charger les credentials depuis les secrets Streamlit
+    credentials_dict = json.loads(st.secrets["GOOGLE_SHEET_CREDENTIALS"])
+    credentials = Credentials.from_service_account_info(credentials_dict)
     client = gspread.authorize(credentials)
 
+    # 🔗 ID du Google Sheet et nom de l'onglet
     SPREADSHEET_ID = "16ZBhF4k4ah-zhc3QcH7IEWLXrhbT8TRTMi5BptCFIcM"
     SHEET_NAME = "Football"
 
@@ -167,11 +170,6 @@ def main():
                         trj_mean.columns = ["Bookmaker", "Moyenne TRJ"]
                         trj_mean = trj_mean.sort_values(by="Moyenne TRJ", ascending=False)
                         trj_mean["Moyenne TRJ"] = trj_mean["Moyenne TRJ"].apply(lambda x: f"{x:.2f}%")
-                        trj_mean.reset_index(drop=True, inplace=True)
-                        trj_mean.index = trj_mean.index + 1
-
-                        all_odds_df["Match_Order"] = all_odds_df.groupby("Match").ngroup()
-                        all_odds_df = all_odds_df.sort_values(by=["Match_Order", "Retour"], ascending=[False, False]).drop(columns=["Match_Order"])
 
                         st.subheader("📊 Moyenne des TRJ par opérateur")
                         st.dataframe(trj_mean)
