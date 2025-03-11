@@ -42,13 +42,13 @@ def get_competitions_from_sheets():
     data = sheet.get_all_records()
     competitions_df = pd.DataFrame(data)
 
-    required_columns = {"Country", "Competition", "URL"}
+    required_columns = {"Pays", "Compétition", "URL"}
     if not required_columns.issubset(competitions_df.columns):
-        st.error("❌ The Google Sheet does not contain the required columns: Country, Competition, URL")
+        st.error("❌ The Google Sheet does not contain the required columns: Pays, Compétition, URL")
         return pd.DataFrame()
 
     competitions_df = competitions_df.sort_values(
-        by=["Country", "Competition"],
+        by=["Pays", "Compétition"],
         key=lambda x: x.map(lambda y: ("" if y == "France" else y))
     )
 
