@@ -15,7 +15,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
 
 os.environ["GH_TOKEN"] = st.secrets["GH_TOKEN"]
-
+os.environ["WDM_LOCAL"] = "1"  # Force l'utilisation du cache local de webdriver-manager
+os.environ["WDM_CACHE"] = "/tmp/.wdm"  # Définition d'un répertoire valide pour le cache sur Streamlit Cloud
 
 
 # 📌 Function to initialize Selenium
@@ -25,7 +26,7 @@ def init_driver():
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
-    service = Service(GeckoDriverManager().install())
+    service = Service(GeckoDriverManager(path="/tmp/.wdm").install())
     driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
 
