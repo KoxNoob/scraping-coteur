@@ -5,7 +5,7 @@ import json
 import re
 import time
 import os
-
+import tempfile
 from google.oauth2.service_account import Credentials
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
@@ -28,10 +28,11 @@ def init_driver():
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
-    # Spécifiez un répertoire valide pour stocker GeckoDriver
-    gecko_driver_path = GeckoDriverManager().install()
-    service = Service(gecko_driver_path)
-    driver = webdriver.Firefox(service=service, options=firefox_options)
+    # Utilisez un répertoire temporaire pour stocker GeckoDriver
+    with tempfile.TemporaryDirectory() as tmpdirname:
+        gecko_driver_path = GeckoDriverManager(path=tmpdirname).install()
+        service = Service(gecko_driver_path)
+        driver = webdriver.Firefox(service=service, options=firefox_options)
 
     return driver
 
