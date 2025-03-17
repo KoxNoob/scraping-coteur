@@ -16,8 +16,8 @@ from webdriver_manager.firefox import GeckoDriverManager
 
 
 os.environ["GH_TOKEN"] = st.secrets["GH_TOKEN"]
-os.environ["WDM_LOCAL"] = "1"
-os.environ["WDM_CACHE"] = "/tmp"
+
+
 
 
 # 📌 Function to initialize Selenium
@@ -27,9 +27,11 @@ def init_driver():
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
-    gecko_path = GeckoDriverManager().install()
-    service = Service(gecko_path)
+    cache_dir = os.path.join(os.getcwd(), 'wdm_cache')
+    os.makedirs(cache_dir, exist_ok=True)
+    os.environ['WDM_CACHE'] = cache_dir
 
+    service = Service(GeckoDriverManager().install())
     driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
 
