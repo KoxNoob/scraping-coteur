@@ -27,9 +27,11 @@ def init_driver():
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
-    cache_dir = os.path.join(os.getcwd(), 'wdm_cache')
-    os.makedirs(cache_dir, exist_ok=True)
-    os.environ['WDM_CACHE'] = cache_dir
+    # ✅ Forcer un chemin valide pour le cache de webdriver-manager
+    cache_path = "/tmp/wdm_cache"
+    os.makedirs(cache_path, exist_ok=True)  # Crée le répertoire s'il n'existe pas
+    os.environ["WDM_CACHE"] = cache_path  # Définit ce répertoire comme cache webdriver-manager
+
 
     service = Service(GeckoDriverManager().install())
     driver = webdriver.Firefox(service=service, options=firefox_options)
