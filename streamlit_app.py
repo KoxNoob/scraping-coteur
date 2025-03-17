@@ -27,7 +27,9 @@ def init_driver():
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
-    service = Service(GeckoDriverManager().install())
+    gecko_path = GeckoDriverManager().install()
+    service = Service(gecko_path)
+
     driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
 
