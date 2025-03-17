@@ -17,7 +17,7 @@ from webdriver_manager.firefox import GeckoDriverManager
 
 os.environ["GH_TOKEN"] = st.secrets["GH_TOKEN"]
 os.environ["WDM_LOCAL"] = "1"
-os.environ["WDM_CACHE"] = "/tmp/.wdm"
+os.environ["WDM_CACHE"] = "/tmp"
 
 
 # 📌 Function to initialize Selenium
