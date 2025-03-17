@@ -28,8 +28,9 @@ def init_driver():
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
-    # ✅ Supprimer toutes les références au cache manuel
-    service = Service(GeckoDriverManager().install())  # Installation propre et automatique de Geckodriver
+    # Spécifiez un répertoire valide pour stocker GeckoDriver
+    gecko_driver_path = GeckoDriverManager().install()
+    service = Service(gecko_driver_path)
     driver = webdriver.Firefox(service=service, options=firefox_options)
 
     return driver
