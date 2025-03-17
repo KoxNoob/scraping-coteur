@@ -28,13 +28,18 @@ def init_driver():
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
-    # Utilisez un répertoire temporaire pour stocker GeckoDriver
-    with tempfile.TemporaryDirectory() as tmpdirname:
-        os.environ['WDM_LOCAL'] = '1'  # Forcer l'installation locale de GeckoDriver
-        os.environ['WDM_LOG'] = '0'  # Désactiver les logs de webdriver_manager
-        gecko_driver_path = GeckoDriverManager().install()
-        service = Service(gecko_driver_path)
-        driver = webdriver.Firefox(service=service, options=firefox_options)
+    # Créer un répertoire spécifique pour GeckoDriver
+    gecko_driver_dir = os.path.join(os.getcwd(), "geckodriver")
+    os.makedirs(gecko_driver_dir, exist_ok=True)
+
+    # Configurer webdriver_manager pour utiliser ce répertoire
+    os.environ['WDM_LOCAL'] = '1'  # Forcer l'installation locale de GeckoDriver
+    os.environ['WDM_LOG'] = '0'  # Désactiver les logs de webdriver_manager
+    os.environ['WDM_CACHE_PATH'] = gecko_driver_dir  # Spécifier le répertoire de cache
+
+    gecko_driver_path = GeckoDriverManager().install()
+    service = Service(gecko_driver_path)
+    driver = webdriver.Firefox(service=service, options=firefox_options)
 
     return driver
 
