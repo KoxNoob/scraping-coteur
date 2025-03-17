@@ -4,6 +4,7 @@ import pandas as pd
 import json
 import re
 import time
+import os
 from google.oauth2.service_account import Credentials
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
@@ -12,6 +13,9 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
+
+os.environ["WDM_LOCAL"] = "1"
+
 
 # 📌 Function to initialize Selenium
 def init_driver():
