@@ -30,7 +30,9 @@ def init_driver():
 
     # Utilisez un répertoire temporaire pour stocker GeckoDriver
     with tempfile.TemporaryDirectory() as tmpdirname:
-        gecko_driver_path = GeckoDriverManager(path=tmpdirname).install()
+        os.environ['WDM_LOCAL'] = '1'  # Forcer l'installation locale de GeckoDriver
+        os.environ['WDM_LOG'] = '0'  # Désactiver les logs de webdriver_manager
+        gecko_driver_path = GeckoDriverManager().install()
         service = Service(gecko_driver_path)
         driver = webdriver.Firefox(service=service, options=firefox_options)
 
