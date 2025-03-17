@@ -30,9 +30,13 @@ def init_driver():
 
     # ✅ Forcer un chemin valide pour le cache de webdriver-manager
     cache_path = "/tmp/webdriver_manager"
-    os.makedirs(cache_path, exist_ok=True)  # Assure que le répertoire existe
-    os.environ["WDM_CACHE"] = cache_path  # Force `webdriver-manager` à utiliser ce cache
+    if os.path.exists(cache_path):
+        shutil.rmtree(cache_path)  # Supprime le cache existant
+    os.makedirs(cache_path, exist_ok=True)  # Assure que le répertoire est recréé
+    os.environ["WDM_LOCAL"] = "1"  # Force l'utilisation du cache local
+    os.environ["WDM_CACHE"] = cache_path  # Définit le cache WebDriver
 
+    # ✅ Télécharger et installer Geckodriver proprement
     gecko_path = GeckoDriverManager().install()
     service = Service(gecko_path)
 
