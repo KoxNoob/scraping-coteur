@@ -5,6 +5,7 @@ import json
 import re
 import time
 import os
+import shutil
 from google.oauth2.service_account import Credentials
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
@@ -16,7 +17,7 @@ from webdriver_manager.firefox import GeckoDriverManager
 
 
 os.environ["GH_TOKEN"] = st.secrets["GH_TOKEN"]
-
+shutil.rmtree("/home/adminuser/.wdm", ignore_errors=True)  # Supprime le cache WebDriver
 
 
 
@@ -28,12 +29,13 @@ def init_driver():
     firefox_options.add_argument("--disable-dev-shm-usage")
 
     # ✅ Forcer un chemin valide pour le cache de webdriver-manager
-    cache_path = "/tmp/wdm_cache"
-    os.makedirs(cache_path, exist_ok=True)  # Crée le répertoire s'il n'existe pas
-    os.environ["WDM_CACHE"] = cache_path  # Définit ce répertoire comme cache webdriver-manager
+    cache_path = "/tmp/webdriver_manager"
+    os.makedirs(cache_path, exist_ok=True)  # Assure que le répertoire existe
+    os.environ["WDM_CACHE"] = cache_path  # Force `webdriver-manager` à utiliser ce cache
 
+    gecko_path = GeckoDriverManager().install()
+    service = Service(gecko_path)
 
-    service = Service(GeckoDriverManager().install())
     driver = webdriver.Firefox(service=service, options=firefox_options)
     return driver
 
