@@ -14,7 +14,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
 
-os.environ["WDM_LOCAL"] = "1"
+os.environ["GH_TOKEN"] = st.secrets["GH_TOKEN"]
+
 
 
 # 📌 Function to initialize Selenium
