@@ -140,28 +140,43 @@ def display_average_payouts(df, sport):
         st.subheader(f"📊 Average Payout by Operator - {sport}")
         st.dataframe(trj_mean)
 
+
 # 📌 Streamlit main interface
 def main():
     st.sidebar.title("📌 Menu")
-    sport = st.sidebar.radio("Choose a sport", ["⚽ Football", "🎾 Tennis"])
-    competitions_df = get_competitions_from_sheets("Football" if sport == "⚽ Football" else "Tennis")
+    menu_selection = st.sidebar.radio("Choose a mode", ["🏠 Home", "⚽ Football", "🎾 Tennis"])
 
-    if not competitions_df.empty:
-        selected_competitions = st.multiselect("📌 Select competitions", competitions_df["Compétition"].tolist())
+    if menu_selection == "🏠 Home":
+        st.title("Welcome to the Betting Odds Scraper 🏠")
+        st.write("Use the sidebar to select Football or Tennis and start scraping odds!")
+    else:
+        sport = "Football" if menu_selection == "⚽ Football" else "Tennis"
+        competitions_df = get_competitions_from_sheets(sport)
+        st.title(f"📊 {sport} Betting Odds Scraper")
 
-        if selected_competitions:
-            all_odds_df = pd.DataFrame()
+        if not competitions_df.empty:
+            selected_competitions = st.multiselect("📌 Select competitions", competitions_df["Compétition"].tolist())
 
-            for comp in selected_competitions:
-                all_odds_df = pd.concat([all_odds_df, get_match_odds(
-                    competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
-                    [], 5, is_tennis=(sport == "🎾 Tennis")
-                )], ignore_index=True)
+            if selected_competitions:
+                all_bookmakers = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin",
+                                  "Vbet", "Genybet", "Feelingbet", "Betsson"]
+                selected_bookmakers = st.multiselect("🎰 Select bookmakers", all_bookmakers, default=all_bookmakers)
+                nb_matchs = st.slider("🔢 Number of matches per competition", 1, 20, 5)
 
-            if not all_odds_df.empty:
-                display_average_payouts(all_odds_df, sport)
-                st.subheader(f"📌 Retrieved {sport} Odds")
-                st.dataframe(all_odds_df)
+                if st.button("🔍 Start scraping"):
+                    with st.spinner("Scraping in progress..."):
+                        all_odds_df = pd.DataFrame()
+
+                        for comp in selected_competitions:
+                            all_odds_df = pd.concat([all_odds_df, get_match_odds(
+                                competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0],
+                                selected_bookmakers, nb_matchs, is_tennis=(sport == "Tennis")
+                            )], ignore_index=True)
+
+                        if not all_odds_df.empty:
+                            display_average_payouts(all_odds_df, sport)
+                            st.subheader(f"📌 Retrieved {sport} Odds")
+                            st.dataframe(all_odds_df)
 
 
 if __name__ == "__main__":
