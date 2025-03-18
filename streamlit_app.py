@@ -52,7 +52,6 @@ def get_competitions_from_sheets(sheet_name):
     return competitions_df
 
 
-# 📌 Function to scrape betting odds for a competition
 def get_match_odds(competition_url, selected_bookmakers, nb_matchs, is_tennis=False):
     driver = init_driver()
     driver.get(competition_url)
@@ -105,11 +104,16 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs, is_tennis=Fa
             let payoutElem = row.querySelector("div.border.bg-warning.payout");
             let payout = payoutElem ? payoutElem.innerText.trim() : "N/A";
 
-            if (odds.length >= (2 if is_tennis else 3)) {
+            if (odds.length >= 2) {
                 let odd_1 = odds[0].innerText.trim();
                 let odd_2 = odds[1].innerText.trim();
-                let odd_n = "N/A" if is_tennis else odds[2].innerText.trim();
-                oddsData.push([bookmaker, odd_1, odd_n, odd_2, payout] if not is_tennis else [bookmaker, odd_1, odd_2, payout]);
+                let odd_n = odds.length >= 3 ? odds[2].innerText.trim() : "N/A";
+
+                if (odds.length === 3) {
+                    oddsData.push([bookmaker, odd_1, odd_n, odd_2, payout]);
+                } else {
+                    oddsData.push([bookmaker, odd_1, odd_2, payout]);
+                }
             }
         });
         return oddsData;
@@ -121,7 +125,10 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs, is_tennis=Fa
 
         for odd in odds_list:
             if odd[0] in selected_bookmakers:
-                all_odds.append([match_name] + odd)
+                if is_tennis:
+                    all_odds.append([match_name] + odd[:3])  # Tennis (1, 2, Payout)
+                else:
+                    all_odds.append([match_name] + odd)  # Football (1, X, 2, Payout)
 
     driver.quit()
     return pd.DataFrame(all_odds,
