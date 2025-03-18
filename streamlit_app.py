@@ -4,8 +4,6 @@ import pandas as pd
 import json
 import re
 import time
-import os
-import tempfile
 from google.oauth2.service_account import Credentials
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
@@ -15,32 +13,15 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
 
-
-os.environ["GH_TOKEN"] = st.secrets["GH_TOKEN"]
-
-
-
-
 # 📌 Function to initialize Selenium
 def init_driver():
     firefox_options = Options()
-    firefox_options.add_argument("--headless")  # Mode headless (obligatoire pour Streamlit Cloud)
+    firefox_options.add_argument("--headless")  # Headless mode required for Streamlit Cloud
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
-    # Créer un répertoire spécifique pour GeckoDriver
-    gecko_driver_dir = os.path.join(os.getcwd(), "geckodriver")
-    os.makedirs(gecko_driver_dir, exist_ok=True)
-
-    # Configurer webdriver_manager pour utiliser ce répertoire
-    os.environ['WDM_LOCAL'] = '1'  # Forcer l'installation locale de GeckoDriver
-    os.environ['WDM_LOG'] = '0'  # Désactiver les logs de webdriver_manager
-    os.environ['WDM_CACHE_PATH'] = gecko_driver_dir  # Spécifier le répertoire de cache
-
-    gecko_driver_path = GeckoDriverManager().install()
-    service = Service(gecko_driver_path)
+    service = Service(GeckoDriverManager().install())
     driver = webdriver.Firefox(service=service, options=firefox_options)
-
     return driver
 
 # 📌 Function to retrieve competitions from Google Sheets
