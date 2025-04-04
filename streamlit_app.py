@@ -62,6 +62,7 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs, is_tennis=Fa
         )
     except:
         st.warning(f"⚠️ No matches found for {competition_url}")
+        driver.quit()
         return pd.DataFrame()
 
     scripts = driver.find_elements(By.TAG_NAME, "script")
@@ -126,14 +127,14 @@ def get_match_odds(competition_url, selected_bookmakers, nb_matchs, is_tennis=Fa
         for odd in odds_list:
             if odd[0] in selected_bookmakers:
                 if is_tennis:
-                    all_odds.append([match_name] + odd)  # Tennis (1, 2, Payout)
+                    all_odds.append([match_name] + odd)
                 else:
-                    all_odds.append([match_name] + odd)  # Football (1, X, 2, Payout)
+                    all_odds.append([match_name] + odd)
 
-        driver.quit()
-        column_names = ["Match", "Bookmaker", "1", "2", "Payout"] if is_tennis else ["Match", "Bookmaker", "1", "Draw",
-                                                                                     "2", "Payout"]
-        return pd.DataFrame(all_odds, columns=column_names)
+    driver.quit()
+
+    column_names = ["Match", "Bookmaker", "1", "2", "Payout"] if is_tennis else ["Match", "Bookmaker", "1", "Draw", "2", "Payout"]
+    return pd.DataFrame(all_odds, columns=column_names)
 
 # 📌 Function to calculate and display average payouts
 def display_average_payouts(df, sport):
