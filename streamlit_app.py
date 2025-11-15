@@ -252,7 +252,11 @@ def main():
 
     menu_selection = st.sidebar.radio(
         "Choose a mode",
-        ["🏠 Home", "⚽ Football", "🎾 Tennis", "🏉 Rugby", "🏀 Basket", "🤾 Handball"]
+        [
+            "🏠 Home", "⚽ Football", "🎾 Tennis", "🏉 Rugby",
+            "🏀 Basket", "🤾 Handball",
+            "🧊 Ice Hockey", "🥊 Boxing", "🏐 Volleyball", "🏈 American Football"
+        ]
     )
 
     if menu_selection == "🏠 Home":
@@ -283,6 +287,27 @@ def main():
         sport = "Handball"
         outcomes_count = 3
         run_sport_section(sport, outcomes_count)
+
+    elif menu_selection == "🧊 Ice Hockey":
+        sport = "Ice Hockey"
+        outcomes_count = 3
+        run_sport_section(sport, outcomes_count)
+
+    elif menu_selection == "🥊 Boxing":
+        sport = "Boxing"
+        outcomes_count = 3
+        run_sport_section(sport, outcomes_count)
+
+    elif menu_selection == "🏐 Volleyball":
+        sport = "Volleyball"
+        outcomes_count = 2
+        run_sport_section(sport, outcomes_count)
+
+    elif menu_selection == "🏈 American Football":
+        sport = "American Football"
+        outcomes_count = 2
+        run_sport_section(sport, outcomes_count)
+
 
 
 def run_sport_section(sport: str, outcomes_count: int):
