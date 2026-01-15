@@ -18,17 +18,22 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
 
+
 # ---------------------------
 # Selenium driver initializer
 # ---------------------------
 def init_driver(headless: bool = True):
     """
-    Initialize a Firefox WebDriver with GeckoDriverManager.
-    headless=True is recommended for Streamlit Cloud / automated runs.
+    Initialize a Firefox WebDriver with GeckoDriverManager and anti-detection headers.
     """
     firefox_options = Options()
     if headless:
         firefox_options.add_argument("--headless")
+
+    # Anti-detection: Simulate a real browser user agent
+    firefox_options.set_preference("general.useragent.override",
+                                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0")
+
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
@@ -56,7 +61,8 @@ def _authorize_gsheets():
     return client
 
 
-def get_competitions_from_sheets(sheet_name: str, spreadsheet_id: str = "16ZBhF4k4ah-zhc3QcH7IEWLXrhbT8TRTMi5BptCFIcM") -> pd.DataFrame:
+def get_competitions_from_sheets(sheet_name: str,
+                                 spreadsheet_id: str = "16ZBhF4k4ah-zhc3QcH7IEWLXrhbT8TRTMi5BptCFIcM") -> pd.DataFrame:
     """
     Retrieve competitions for a given sheet/tab name.
     Expects the sheet tab to contain columns: 'Pays', 'Compétition', 'URL'
@@ -90,24 +96,20 @@ def get_competitions_from_sheets(sheet_name: str, spreadsheet_id: str = "16ZBhF4
 # Scraper: generic function for 2-way / 3-way
 # --------------------------------------------
 def get_match_odds(
-    competition_url: str,
-    selected_bookmakers: List[str],
-    nb_matchs: int = 5,
-    outcomes_count: int = 3,
-    headless: bool = True
+        competition_url: str,
+        selected_bookmakers: List[str],
+        nb_matchs: int = 5,
+        outcomes_count: int = 3,
+        headless: bool = True
 ) -> pd.DataFrame:
     """
     Scrape matches from a competition page on coteur.com and retrieve odds for selected bookmakers.
-    - outcomes_count: 3 for (1 / Draw / 2) markets (football, rugby, handball), 2 for (1 / 2) markets (tennis, basket).
-    Returns a DataFrame with columns depending on outcomes_count:
-      - 3-way: ["Match", "Bookmaker", "1", "Draw", "2", "Payout"]
-      - 2-way: ["Match", "Bookmaker", "1", "2", "Payout"]
     """
     driver = init_driver(headless=headless)
     driver.get(competition_url)
 
     try:
-        WebDriverWait(driver, 10).until(
+        WebDriverWait(driver, 15).until(
             EC.presence_of_all_elements_located((By.TAG_NAME, "script"))
         )
     except Exception:
@@ -118,7 +120,6 @@ def get_match_odds(
     scripts = driver.find_elements(By.TAG_NAME, "script")
     match_links = []
 
-    # Extract JSON-LD scripts containing "@type":"SportsEvent"
     for script in scripts:
         inner = script.get_attribute("innerHTML")
         if '"@type":"SportsEvent"' in inner:
@@ -132,7 +133,6 @@ def get_match_odds(
             except json.JSONDecodeError:
                 continue
 
-    # fallback: if no jsonld found, try to find match links by css (best-effort)
     if not match_links:
         try:
             anchors = driver.find_elements(By.CSS_SELECTOR, "a.btn.btn-primary")
@@ -151,16 +151,23 @@ def get_match_odds(
         driver.get(match_url)
 
         try:
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.bookline"))
-            )
-        except Exception:
-            st.warning(f"⚠️ No odds found for {match_url}")
-            continue
+            # Wait longer for the odds table to inject into the DOM
+            wait = WebDriverWait(driver, 20)
+            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.bookline")))
 
-        time.sleep(2)
-        driver.refresh()
-        time.sleep(2)
+            # Scroll down to trigger potential lazy loading of odds
+            driver.execute_script("window.scrollBy(0, 500);")
+            time.sleep(1)
+        except Exception:
+            # Fallback: Refresh and try once more if elements are missing
+            driver.refresh()
+            try:
+                WebDriverWait(driver, 10).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.bookline"))
+                )
+            except:
+                st.warning(f"⚠️ No odds found for {match_url}")
+                continue
 
         odds_script = '''
         let oddsData = [];
@@ -215,7 +222,8 @@ def get_match_odds(
 
     driver.quit()
 
-    column_names = ["Match", "Bookmaker", "1", "Draw", "2", "Payout"] if outcomes_count == 3 else ["Match", "Bookmaker", "1", "2", "Payout"]
+    column_names = ["Match", "Bookmaker", "1", "Draw", "2", "Payout"] if outcomes_count == 3 else ["Match", "Bookmaker",
+                                                                                                   "1", "2", "Payout"]
     df = pd.DataFrame(all_odds, columns=column_names)
     return df
 
@@ -243,7 +251,6 @@ def display_average_payouts(df: pd.DataFrame, sport: str):
     trj_mean["Average Payout"] = trj_mean["Average Payout"].apply(lambda x: f"{x:.2f}%")
     st.subheader(f"📊 Average Payout by Operator - {sport}")
     st.dataframe(trj_mean)
-
 
 # part2.py
 # Streamlit UI integrating Football, Tennis, Rugby, Basket and Handball
