@@ -107,7 +107,7 @@ def get_match_odds(
     driver.get(competition_url)
 
     try:
-        WebDriverWait(driver, 5).until(
+        WebDriverWait(driver, 10).until(
             EC.presence_of_all_elements_located((By.TAG_NAME, "script"))
         )
     except Exception:
@@ -151,16 +151,16 @@ def get_match_odds(
         driver.get(match_url)
 
         try:
-            WebDriverWait(driver, 5).until(
+            WebDriverWait(driver, 10).until(
                 EC.presence_of_all_elements_located((By.CSS_SELECTOR, "div.bookline"))
             )
         except Exception:
             st.warning(f"⚠️ No odds found for {match_url}")
             continue
 
-        time.sleep(1.5)
+        time.sleep(2)
         driver.refresh()
-        time.sleep(1.5)
+        time.sleep(2)
 
         odds_script = '''
         let oddsData = [];
