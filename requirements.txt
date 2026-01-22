@@ -2,5 +2,5 @@ selenium
 webdriver-manager
 beautifulsoup4
 pandas
-streamlit
+streamlit>=1.22.0
 gspread
