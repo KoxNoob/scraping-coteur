@@ -102,32 +102,56 @@ def get_match_odds(
         outcomes_count: int = 3,
         headless: bool = True
 ) -> pd.DataFrame:
+
+
+
     driver = init_driver(headless=headless)
     driver.get(competition_url)
 
     # 1. Récupération des liens des matchs
     match_links = []
     try:
-        # On attend que les liens de cotes soient présents
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/cote/']"))
-        )
-        # On récupère les liens dans les blocs match-row
-        anchors = driver.find_elements(By.CSS_SELECTOR, ".match-row a[href*='/cote/']")
+        # On attend que les lignes de match soient là
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "match-row")))
+        anchors = driver.find_elements(By.CSS_SELECTOR, "div.match-row a[href*='/cote/']")
         for a in anchors:
-            href = a.get_attribute("href")
-            if href:
-                match_links.append(href)
+            match_links.append(a.get_attribute("href"))
     except Exception:
         st.warning(f"⚠️ Aucun match trouvé sur {competition_url}")
         driver.quit()
         return pd.DataFrame()
 
-    # Supprimer les doublons et limiter au nombre demandé
     match_links = list(dict.fromkeys(match_links))[:nb_matchs]
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
     all_odds = []
 
-    # Mapping des IDs opérateurs
+    # Dictionnaire de correspondance ID -> Nom (à compléter si besoin)
     book_map = {
         "20": "Unibet", "21": "Pmu", "22": "ParionsSport",
         "24": "Betclic", "32": "Genybet", "33": "Winamax",
@@ -136,58 +160,71 @@ def get_match_odds(
 
     for match_url in match_links:
         driver.get(match_url)
+        time.sleep(2)  # Petit délai pour le rendu du tableau
 
-        try:
-            # On attend que le tableau de cotes (tr) soit visible sur la page du match
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "tr td.text-center"))
-            )
-            time.sleep(1)  # Sécurité rendu
-        except:
-            continue
+        # Script JS adapté à la nouvelle structure tr/td
 
-        # Script JS pour extraire les lignes du tableau
+
+
         odds_script = '''
         let results = [];
+        // On cible toutes les lignes qui contiennent un lien vers un bookmaker
         document.querySelectorAll("tr").forEach(row => {
             let bookLink = row.querySelector("a[href*='/bookmaker/']");
-            let cells = row.querySelectorAll("td.text-center");
-            if (bookLink && cells.length >= 2) {
-                let bookId = bookLink.getAttribute("href").split("/").pop();
+            if (bookLink) {
+                let href = bookLink.getAttribute("href");
+                let bookId = href.split("/").pop(); // Récupère le '24'
+
+                // On récupère toutes les colonnes text-center (les cotes)
+                let cells = row.querySelectorAll("td.text-center");
                 let cotes = Array.from(cells).map(c => c.innerText.trim());
-                results.push({id: bookId, cotes: cotes});
+
+                // On cherche le TRJ (souvent la dernière colonne ou une classe spécifique)
+                let payout = row.querySelector(".payout, .text-bg-warning")?.innerText.trim() || "N/A";
+
+                if (cotes.length >= 2) {
+                    results.push({id: bookId, cotes: cotes, payout: payout});
+                }
             }
         });
         return results;
         '''
 
-        raw_data = driver.execute_script(odds_script)
+        try:
+            raw_data = driver.execute_script(odds_script)
+        except:
+            continue
 
-        # NETTOYAGE DU NOM : On enlève l'ID à la fin (ex: 1574972)
         raw_name = match_url.split("/")[-1].replace("-", " ").title()
+        # Supprime les chiffres (ID) à la fin du nom
         match_name = re.sub(r'\s*\d+$', '', raw_name).strip()
 
         for item in raw_data:
             b_name = book_map.get(item['id'], f"Bookmaker_{item['id']}")
-            if b_name not in selected_bookmakers:
+
+            if b_name not in selected_bookmakers and item['id'] not in selected_bookmakers:
                 continue
 
+            # Conversion des cotes en nombres flottants
             try:
-                # Conversion des cotes en float
-                c = [float(v.replace(',', '.')) for v in item['cotes'] if v and v != '-']
+                c = [float(v.replace(',', '.')) for v in item['cotes'] if v]
                 if not c: continue
+            except ValueError:
+                continue
 
-                # CALCUL DU PAYOUT (TRJ)
-                # Formule : 1 / ( (1/Cote1) + (1/Cote2) + ... ) * 100
+            # CALCUL DU PAYOUT (TRJ)
+            # Formule : 1 / ( (1/Cote1) + (1/Cote2) + ... ) * 100
+            try:
                 inv_sum = sum(1 / val for val in c[:outcomes_count])
                 payout_val = (1 / inv_sum) * 100
+            except ZeroDivisionError:
+                payout_val = 0.0
 
-                if outcomes_count == 3 and len(c) >= 3:
-                    all_odds.append([match_name, b_name, c[0], c[1], c[2], payout_val])
-                elif outcomes_count == 2 and len(c) >= 2:
-                    all_odds.append([match_name, b_name, c[0], c[-1], payout_val])
-            except:
-                continue
+            # Logique d'insertion
+            if outcomes_count == 3 and len(c) >= 3:
+                all_odds.append([match_name, b_name, c[0], c[1], c[2], payout_val])
+            elif outcomes_count == 2 and len(c) >= 2:
+                all_odds.append([match_name, b_name, c[0], c[-1], payout_val])
 
     driver.quit()
 
@@ -326,11 +363,7 @@ def run_sport_section(sport: str, outcomes_count: int):
                 if not all_odds_df.empty:
                     display_average_payouts(all_odds_df, sport)
                     st.subheader(f"📌 Retrieved {sport} Odds")
-
-                    # On crée une copie pour l'affichage avec le symbole %
-                    display_df = all_odds_df.copy()
-                    display_df["Payout"] = display_df["Payout"].apply(lambda x: f"{x:.2f}%")
-                    st.dataframe(display_df)
+                    st.dataframe(all_odds_df)
                 else:
                     st.info(f"No odds retrieved for {sport}.")
     else:
