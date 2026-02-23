@@ -102,130 +102,86 @@ def get_match_odds(
         outcomes_count: int = 3,
         headless: bool = True
 ) -> pd.DataFrame:
-
-
-
     driver = init_driver(headless=headless)
     driver.get(competition_url)
 
-    # 1. Récupération et reconstruction des liens des matchs
-    # 1. Récupération des liens des matchs (Version ultra-large)
+    # 1. Récupération des liens des matchs
     match_links = []
     try:
-        # On attend que la page soit stable
+        # On attend les lignes de match sur la page compétition
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "match-row")))
-
-        # On cherche TOUS les liens qui contiennent '/cote/' dans toute la page
-        # C'est plus sûr que de restreindre à match-row si la structure a bougé
-        anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/cote/']")
+        anchors = driver.find_elements(By.CSS_SELECTOR, ".match-row a[href*='/cote/']")
         for a in anchors:
-            href = a.get_attribute("href")
-            # On ne prend que les liens de matchs, pas les types de paris
-            if href and "/cote/" in href and not any(x in href for x in ["type-pari", "resultat", "statistiques"]):
-                match_links.append(href)
-    except Exception as e:
-        st.warning(f"⚠️ Erreur de détection des liens : {e}")
+            match_links.append(a.get_attribute("href"))
+    except:
         driver.quit()
         return pd.DataFrame()
 
     match_links = list(dict.fromkeys(match_links))[:nb_matchs]
-
-
     all_odds = []
-
-    # Dictionnaire de correspondance ID -> Nom (à compléter si besoin)
-    book_map = {
-        "20": "Unibet", "21": "Pmu", "22": "ParionsSport",
-        "24": "Betclic", "32": "Genybet", "33": "Winamax",
-        "37": "Vbet", "43": "Betsson", "44": "Olybet"
-    }
+    book_map = {"20": "Unibet", "21": "Pmu", "22": "ParionsSport", "24": "Betclic",
+                "32": "Genybet", "33": "Winamax", "37": "Vbet", "43": "Betsson", "44": "Olybet"}
 
     for match_url in match_links:
-        st.write(f"🔍 Analyse du match : {match_url.split('/')[-1]}")
+        st.info(f"🔗 Navigation vers : {match_url}")
         driver.get(match_url)
 
         try:
-            # On attend que les bookmakers soient là
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='bookmaker']"))
+            # On attend que le tbody contenant les cotes soit chargé
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "tbody tr td.ps-4"))
             )
-            # Log de succès de chargement
-            st.success(f"✅ Page chargée pour : {match_url.split('/')[-1]}")
+            time.sleep(1)  # Sécurité pour injection JS
         except:
-            st.error(f"❌ Impossible de charger les cotes pour : {match_url}")
+            st.warning(f"⚠️ Tableau non trouvé pour {match_url}")
             continue
 
-
-
-        # Script JS adapté à la nouvelle structure tr/td
-
+        # Script JS optimisé pour le tbody et ps-4
         odds_script = '''
         let results = [];
-        // On cible toutes les lignes du tableau
-        document.querySelectorAll("tr").forEach(row => {
-            // Recherche du lien vers le bookmaker de manière plus souple
-            let bookLink = row.querySelector("a[href*='bookmaker']");
-            
-            // On récupère toutes les colonnes qui contiennent potentiellement des cotes
-            // On cible les cellules text-center ou celles ayant des classes de cotes courantes
-            let cells = row.querySelectorAll("td.text-center, td.cote, td.odds");
-            
-            if (bookLink) {
-                let href = bookLink.getAttribute("href");
-                let bookId = href.split("/").pop(); 
+        // On cible uniquement les lignes à l'intérieur du tbody
+        document.querySelectorAll("tbody tr").forEach(row => {
+            let bookLink = row.querySelector("td.ps-4 a[href*='/bookmaker/']");
+            let cells = row.querySelectorAll("td.text-center");
 
-                // Extraction des textes des cellules, on nettoie et on ne garde que les nombres/points
+            if (bookLink && cells.length >= 2) {
+                let bookId = bookLink.getAttribute("href").split("/").pop();
                 let cotes = Array.from(cells)
                                  .map(c => c.innerText.trim())
-                                 .filter(txt => /^[0-9.,]+$/.test(txt)); // Garde uniquement ce qui ressemble à une cote
-
-                if (cotes.length >= 2) {
-                    results.push({id: bookId, cotes: cotes});
-                }
+                                 .filter(txt => /^[0-9.,]+$/.test(txt));
+                results.push({id: bookId, cotes: cotes});
             }
         });
         return results;
         '''
 
-        try:
-            st.write(f"DEBUG: Nombre de lignes TR trouvées : {len(driver.find_elements(By.TAG_NAME, 'tr'))}")
-            raw_data = driver.execute_script(odds_script)
-        except:
-            continue
+        raw_data = driver.execute_script(odds_script)
 
+        # Nettoyage du nom du match (retrait de l'ID numérique)
         raw_name = match_url.split("/")[-1].replace("-", " ").title()
-        # Supprime les chiffres (ID) à la fin du nom
         match_name = re.sub(r'\s*\d+$', '', raw_name).strip()
 
         for item in raw_data:
-            b_name = book_map.get(item['id'], f"Bookmaker_{item['id']}")
-
-            if b_name not in selected_bookmakers and item['id'] not in selected_bookmakers:
+            b_name = book_map.get(item['id'], f"ID_{item['id']}")
+            if b_name not in selected_bookmakers:
                 continue
 
-            # Conversion des cotes en nombres flottants
             try:
                 c = [float(v.replace(',', '.')) for v in item['cotes'] if v]
-                if not c: continue
-            except ValueError:
-                continue
+                if len(c) < outcomes_count: continue
 
-            # CALCUL DU PAYOUT (TRJ)
-            # Formule : 1 / ( (1/Cote1) + (1/Cote2) + ... ) * 100
-            try:
+                # Calcul automatique du TRJ (Payout)
                 inv_sum = sum(1 / val for val in c[:outcomes_count])
                 payout_val = (1 / inv_sum) * 100
-            except ZeroDivisionError:
-                payout_val = 0.0
 
-            # Logique d'insertion
-            if outcomes_count == 3 and len(c) >= 3:
-                all_odds.append([match_name, b_name, c[0], c[1], c[2], payout_val])
-            elif outcomes_count == 2 and len(c) >= 2:
-                all_odds.append([match_name, b_name, c[0], c[-1], payout_val])
+                if outcomes_count == 3:
+                    all_odds.append([match_name, b_name, c[0], c[1], c[2], payout_val])
+                else:
+                    all_odds.append([match_name, b_name, c[0], c[-1], payout_val])
+            except:
+                continue
 
     driver.quit()
-
     cols = ["Match", "Bookmaker", "1", "Draw", "2", "Payout"] if outcomes_count == 3 else ["Match", "Bookmaker", "1",
                                                                                            "2", "Payout"]
     return pd.DataFrame(all_odds, columns=cols)
