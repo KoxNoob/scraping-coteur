@@ -153,9 +153,9 @@ def get_match_odds(
 
     # Dictionnaire de correspondance ID -> Nom (à compléter si besoin)
     book_map = {
-        "2": "Winamax", "3": "Unibet", "1": "Bwin", "4": "Betclic",
-        "24": "Betclic", "7": "Pmu", "8": "ParionsSport", "10": "Zebet",
-        "30": "Vbet", "33": "BarriereBet", "44": "Betsson"
+        "20": "Unibet", "21": "Pmu", "22": "ParionsSport",
+        "24": "Betclic", "32": "Genybet", "33": "Winamax",
+        "37": "Vbet", "43": "Betsson", "44": "Olybet"
     }
 
     for match_url in match_links:
