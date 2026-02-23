@@ -145,16 +145,14 @@ def get_match_odds(
         driver.get(match_url)
 
         try:
-            # On attend explicitement qu'un lien vers un bookmaker soit visible dans le tableau
-            # C'est le signal que les cotes sont affichées
-            wait = WebDriverWait(driver, 15)
-            wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "a[href*='/bookmaker/']")))
-
-            # Petit scroll pour forcer l'activation des scripts si besoin
-            driver.execute_script("window.scrollBy(0, 300);")
-            time.sleep(1)
-        except Exception:
-            st.warning(f"⚠️ Timeout : Les cotes n'ont pas chargé pour {match_url}")
+            # On attend que les bookmakers soient là
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='bookmaker']"))
+            )
+            # Log de succès de chargement
+            st.success(f"✅ Page chargée pour : {match_url.split('/')[-1]}")
+        except:
+            st.error(f"❌ Impossible de charger les cotes pour : {match_url}")
             continue
 
 
