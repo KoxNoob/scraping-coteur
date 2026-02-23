@@ -102,130 +102,90 @@ def get_match_odds(
         outcomes_count: int = 3,
         headless: bool = True
 ) -> pd.DataFrame:
-    """
-    Scrape matches from a competition page on coteur.com and retrieve odds for selected bookmakers.
-    """
     driver = init_driver(headless=headless)
     driver.get(competition_url)
 
+    # 1. Récupération des liens des matchs
+    match_links = []
     try:
-        WebDriverWait(driver, 15).until(
-            EC.presence_of_all_elements_located((By.TAG_NAME, "script"))
-        )
+        # On attend que les lignes de match soient là
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "match-row")))
+        anchors = driver.find_elements(By.CSS_SELECTOR, "div.match-row a[href*='/cote/']")
+        for a in anchors:
+            match_links.append(a.get_attribute("href"))
     except Exception:
-        st.warning(f"⚠️ No matches found for {competition_url}")
+        st.warning(f"⚠️ Aucun match trouvé sur {competition_url}")
         driver.quit()
         return pd.DataFrame()
 
-    scripts = driver.find_elements(By.TAG_NAME, "script")
-    match_links = []
-
-    for script in scripts:
-        inner = script.get_attribute("innerHTML")
-        if '"@type":"SportsEvent"' in inner:
-            try:
-                cleaned = re.sub(r'[\x00-\x1F\x7F]', '', inner)
-                json_data = json.loads(cleaned)
-                if isinstance(json_data, dict) and "url" in json_data:
-                    original_url = "https://www.coteur.com" + json_data["url"]
-                    corrected_url = original_url.replace("/match/pronostic-", "/cote/")
-                    match_links.append(corrected_url)
-            except json.JSONDecodeError:
-                continue
-
-    if not match_links:
-        try:
-            anchors = driver.find_elements(By.CSS_SELECTOR, "a.btn.btn-primary")
-            for a in anchors:
-                href = a.get_attribute("href")
-                if href and "/cote/" in href:
-                    match_links.append(href)
-        except Exception:
-            pass
-
-    match_links = list(dict.fromkeys(match_links))
-    match_links = match_links[:nb_matchs]
+    match_links = list(dict.fromkeys(match_links))[:nb_matchs]
     all_odds = []
+
+    # Dictionnaire de correspondance ID -> Nom (à compléter si besoin)
+    book_map = {
+        "2": "Winamax", "3": "Unibet", "1": "Bwin", "4": "Betclic",
+        "24": "Betclic", "7": "Pmu", "8": "ParionsSport", "10": "Zebet",
+        "30": "Vbet", "33": "BarriereBet", "44": "Betsson"
+    }
 
     for match_url in match_links:
         driver.get(match_url)
+        time.sleep(2)  # Petit délai pour le rendu du tableau
 
-        try:
-            # Wait longer for the odds table to inject into the DOM
-            wait = WebDriverWait(driver, 20)
-            wait.until(EC.presence_of_element_located((By.CSS_SELECTOR, "div.bookline")))
-
-            # Scroll down to trigger potential lazy loading of odds
-            driver.execute_script("window.scrollBy(0, 500);")
-            time.sleep(1)
-        except Exception:
-            # Fallback: Refresh and try once more if elements are missing
-            driver.refresh()
-            try:
-                WebDriverWait(driver, 10).until(
-                    EC.presence_of_element_located((By.CSS_SELECTOR, "div.bookline"))
-                )
-            except:
-                st.warning(f"⚠️ No odds found for {match_url}")
-                continue
-
+        # Script JS adapté à la nouvelle structure tr/td
         odds_script = '''
-        let oddsData = [];
-        document.querySelectorAll("div.bookline").forEach(row => {
-            let bookmaker = row.getAttribute("data-name");
-            let odds = row.querySelectorAll("div.odds-col");
-            let payoutElem = row.querySelector("div.border.bg-warning.payout");
-            let payout = payoutElem ? payoutElem.innerText.trim() : "N/A";
+        let results = [];
+        // On cible toutes les lignes qui contiennent un lien vers un bookmaker
+        document.querySelectorAll("tr").forEach(row => {
+            let bookLink = row.querySelector("a[href*='/bookmaker/']");
+            if (bookLink) {
+                let href = bookLink.getAttribute("href");
+                let bookId = href.split("/").pop(); // Récupère le '24'
 
-            if (odds.length >= 2) {
-                let odd_1 = odds[0].innerText.trim();
-                let odd_2 = odds[1].innerText.trim();
-                let odd_n = odds.length >= 3 ? odds[2].innerText.trim() : "N/A";
+                // On récupère toutes les colonnes text-center (les cotes)
+                let cells = row.querySelectorAll("td.text-center");
+                let cotes = Array.from(cells).map(c => c.innerText.trim());
 
-                if (odds.length === 3) {
-                    oddsData.push([bookmaker, odd_1, odd_n, odd_2, payout]);
-                } else {
-                    oddsData.push([bookmaker, odd_1, odd_2, payout]);
+                // On cherche le TRJ (souvent la dernière colonne ou une classe spécifique)
+                let payout = row.querySelector(".payout, .text-bg-warning")?.innerText.trim() || "N/A";
+
+                if (cotes.length >= 2) {
+                    results.push({id: bookId, cotes: cotes, payout: payout});
                 }
             }
         });
-        return oddsData;
+        return results;
         '''
 
         try:
-            odds_list = driver.execute_script(odds_script)
-        except Exception:
-            odds_list = []
+            raw_data = driver.execute_script(odds_script)
+        except:
+            continue
 
         match_name = match_url.split("/")[-1].replace("-", " ").title()
-        match_name = re.sub(r'\s*\d+#Cote\s*$', '', match_name).strip()
 
-        for odd in odds_list:
-            bookmaker_name = odd[0]
-            if bookmaker_name not in selected_bookmakers:
+        for item in raw_data:
+            # On traduit l'ID en nom de bookmaker
+            b_name = book_map.get(item['id'], f"Bookmaker_{item['id']}")
+
+            if b_name not in selected_bookmakers and item['id'] not in selected_bookmakers:
                 continue
 
-            if len(odd) == 5:
-                if outcomes_count == 3:
-                    row = [match_name, bookmaker_name, odd[1], odd[2], odd[3], odd[4]]
-                else:
-                    row = [match_name, bookmaker_name, odd[1], odd[3], odd[4]]
-            elif len(odd) == 4:
-                if outcomes_count == 2:
-                    row = [match_name, bookmaker_name, odd[1], odd[2], odd[3]]
-                else:
-                    row = [match_name, bookmaker_name, odd[1], "N/A", odd[2], odd[3]]
-            else:
-                continue
+            c = item['cotes']
+            p = item['payout']
 
-            all_odds.append(row)
+            # Logique d'insertion selon le sport (2 ou 3 issues)
+            if outcomes_count == 3 and len(c) >= 3:
+                all_odds.append([match_name, b_name, c[0], c[1], c[2], p])
+            elif outcomes_count == 2 and len(c) >= 2:
+                # Pour le tennis, on ignore souvent le nul s'il existe par erreur
+                all_odds.append([match_name, b_name, c[0], c[-1], p])
 
     driver.quit()
 
-    column_names = ["Match", "Bookmaker", "1", "Draw", "2", "Payout"] if outcomes_count == 3 else ["Match", "Bookmaker",
-                                                                                                   "1", "2", "Payout"]
-    df = pd.DataFrame(all_odds, columns=column_names)
-    return df
+    cols = ["Match", "Bookmaker", "1", "Draw", "2", "Payout"] if outcomes_count == 3 else ["Match", "Bookmaker", "1",
+                                                                                           "2", "Payout"]
+    return pd.DataFrame(all_odds, columns=cols)
 
 
 # --------------------------------------------
