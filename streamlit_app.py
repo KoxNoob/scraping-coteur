@@ -108,45 +108,47 @@ def get_match_odds(
     driver = init_driver(headless=headless)
     driver.get(competition_url)
 
-    # 1. Récupération des liens des matchs
+    # 1. Récupération et reconstruction des liens des matchs
     match_links = []
     try:
-        # On attend que les lignes de match soient là
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "match-row")))
-        anchors = driver.find_elements(By.CSS_SELECTOR, "div.match-row a[href*='/cote/']")
-        for a in anchors:
-            match_links.append(a.get_attribute("href"))
-    except Exception:
-        st.warning(f"⚠️ Aucun match trouvé sur {competition_url}")
+
+        # On cible les lignes de match
+        rows = driver.find_elements(By.CLASS_NAME, "match-row")
+
+        for row in rows:
+            # On cherche l'ID du match souvent stocké dans un attribut data-id ou id
+            m_id = row.get_attribute("id") or row.get_attribute("data-id")
+            if not m_id:
+                continue
+
+            # Nettoyage de l'ID (parfois préfixé par 'match-')
+            m_id = m_id.replace("match-", "")
+
+            # Extraction du texte pour forger le slug (ex: "Strasbourg - Lens")
+            try:
+                teams_text = row.find_element(By.CSS_SELECTOR, ".match-teams").text
+                slug = teams_text.lower().replace(" - ", "-").replace(" ", "-")
+                # Suppression des accents et caractères spéciaux simples
+                slug = re.sub(r'[^a-z0-9-]', '', slug)
+
+                full_url = f"https://www.coteur.com/cote/{slug}-{m_id}"
+                match_links.append(full_url)
+            except:
+                # Fallback : Si l'extraction texte échoue, on cherche un lien classique
+                try:
+                    link = row.find_element(By.TAG_NAME, "a").get_attribute("href")
+                    if "/cote/" in link:
+                        match_links.append(link)
+                except:
+                    continue
+
+    except Exception as e:
+        st.warning(f"⚠️ Erreur lors de la lecture de la liste des matchs : {e}")
         driver.quit()
         return pd.DataFrame()
 
     match_links = list(dict.fromkeys(match_links))[:nb_matchs]
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
     all_odds = []
@@ -160,11 +162,19 @@ def get_match_odds(
 
     for match_url in match_links:
         driver.get(match_url)
-        time.sleep(2)  # Petit délai pour le rendu du tableau
+
+        try:
+            # On attend que le tableau contenant les liens bookmakers soit visible
+            WebDriverWait(driver, 10).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/bookmaker/']"))
+            )
+        except:
+            # Parfois le match est passé ou les cotes ne sont plus dispo
+            continue
+
+
 
         # Script JS adapté à la nouvelle structure tr/td
-
-
 
         odds_script = '''
         let results = [];
