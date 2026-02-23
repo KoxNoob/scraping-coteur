@@ -22,15 +22,12 @@ def init_driver(headless: bool = True):
     firefox_options = Options()
     if headless:
         firefox_options.add_argument("--headless")
-
     firefox_options.set_preference("general.useragent.override",
                                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0")
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
-
     service = Service(GeckoDriverManager().install())
-    driver = webdriver.Firefox(service=service, options=firefox_options)
-    return driver
+    return webdriver.Firefox(service=service, options=firefox_options)
 
 
 # ---------------------------------------
@@ -40,12 +37,9 @@ def _authorize_gsheets():
     credentials_dict = st.secrets.get("GOOGLE_SHEET_CREDENTIALS")
     if not credentials_dict:
         raise RuntimeError("Missing GOOGLE_SHEET_CREDENTIALS in st.secrets.")
-    credentials = Credentials.from_service_account_info(
-        credentials_dict,
-        scopes=["https://www.googleapis.com/auth/spreadsheets"]
-    )
-    client = gspread.authorize(credentials)
-    return client
+    credentials = Credentials.from_service_account_info(credentials_dict,
+                                                        scopes=["https://www.googleapis.com/auth/spreadsheets"])
+    return gspread.authorize(credentials)
 
 
 def get_competitions_from_sheets(sheet_name: str,
@@ -53,186 +47,149 @@ def get_competitions_from_sheets(sheet_name: str,
     client = _authorize_gsheets()
     try:
         sheet = client.open_by_key(spreadsheet_id).worksheet(sheet_name)
+        data = sheet.get_all_records()
+        df = pd.DataFrame(data)
+        df = df.sort_values(by=["Pays", "Compétition"],
+                            key=lambda x: x.map(lambda y: ("" if str(y).strip() == "France" else str(y)))).reset_index(
+            drop=True)
+        return df
     except Exception as e:
-        st.error(f"Unable to open worksheet '{sheet_name}': {e}")
+        st.error(f"Erreur GSheets: {e}")
         return pd.DataFrame()
-
-    data = sheet.get_all_records()
-    competitions_df = pd.DataFrame(data)
-
-    required_columns = {"Pays", "Compétition", "URL"}
-    if not required_columns.issubset(set(competitions_df.columns)):
-        st.error(f"❌ The Google Sheet tab '{sheet_name}' must contain these columns: {required_columns}")
-        return pd.DataFrame()
-
-    competitions_df = competitions_df.sort_values(
-        by=["Pays", "Compétition"],
-        key=lambda x: x.map(lambda y: ("" if str(y).strip() == "France" else str(y)))
-    ).reset_index(drop=True)
-
-    return competitions_df
 
 
 # --------------------------------------------
-# Scraper: logic for 2-way / 3-way
+# Scraper: La fonction qui doit marcher
 # --------------------------------------------
-def get_match_odds(
-        competition_url: str,
-        selected_bookmakers: List[str],
-        nb_matchs: int = 5,
-        outcomes_count: int = 3,
-        headless: bool = True
-) -> pd.DataFrame:
+def get_match_odds(competition_url: str, selected_bookmakers: List[str], nb_matchs: int = 5, outcomes_count: int = 3,
+                   headless: bool = True) -> pd.DataFrame:
     driver = init_driver(headless=headless)
     driver.get(competition_url)
 
     match_links = []
     try:
-        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "match-row")))
-        anchors = driver.find_elements(By.CSS_SELECTOR, "div.match-row a[href*='/cote/']")
+        # On attend les liens de match (plus robuste)
+        WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/cote/']")))
+        anchors = driver.find_elements(By.CSS_SELECTOR, "a[href*='/cote/']")
         for a in anchors:
-            match_links.append(a.get_attribute("href"))
-    except Exception:
+            href = a.get_attribute("href")
+            if href and "/match/" not in href:  # On veut les pages de cotes, pas de prono
+                match_links.append(href)
+    except:
         driver.quit()
         return pd.DataFrame()
 
     match_links = list(dict.fromkeys(match_links))[:nb_matchs]
     all_odds = []
 
-    # Mapping complet basé sur tes IDs
-    book_map = {
-        "20": "Unibet", "21": "Pmu", "22": "ParionsSport",
-        "24": "Betclic", "32": "Genybet", "33": "Winamax",
-        "37": "Vbet", "43": "Betsson", "44": "Olybet"
-    }
+    # Ton mapping d'IDs
+    book_map = {"20": "Unibet", "21": "Pmu", "22": "ParionsSport", "24": "Betclic", "32": "Genybet", "33": "Winamax",
+                "37": "Vbet", "43": "Betsson", "44": "Olybet"}
 
     for match_url in match_links:
         driver.get(match_url)
-        time.sleep(2)
+        try:
+            # ATTENTE CRUCIALE : On attend que le tableau de cotes soit chargé
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.CSS_SELECTOR, "tr td.text-center")))
+        except:
+            continue
 
         odds_script = '''
         let results = [];
         document.querySelectorAll("tr").forEach(row => {
             let bookLink = row.querySelector("a[href*='/bookmaker/']");
-            if (bookLink) {
+            let cells = row.querySelectorAll("td.text-center");
+            if (bookLink && cells.length >= 2) {
                 let bookId = bookLink.getAttribute("href").split("/").pop();
-                let cells = row.querySelectorAll("td.text-center");
                 let cotes = Array.from(cells).map(c => c.innerText.trim());
-                if (cotes.length >= 2) {
-                    results.push({id: bookId, cotes: cotes});
-                }
+                results.push({id: bookId, cotes: cotes});
             }
         });
         return results;
         '''
 
-        try:
-            raw_data = driver.execute_script(odds_script)
-        except:
-            continue
-
-        # Nettoyage propre du nom (suppression ID numérique)
-        match_name = match_url.split("/")[-1].replace("-", " ").title()
-        match_name = re.sub(r'\s*\d+$', '', match_name).strip()
+        raw_data = driver.execute_script(odds_script)
+        match_name = re.sub(r'\s*\d+$', '', match_url.split("/")[-1].replace("-", " ").title()).strip()
 
         for item in raw_data:
             b_name = book_map.get(item['id'], f"ID_{item['id']}")
-            if b_name not in selected_bookmakers:
+
+            # Si on a un ID inconnu mais qu'il est dans la liste de sélection, on le garde
+            if b_name not in selected_bookmakers and item['id'] not in selected_bookmakers:
                 continue
 
             try:
-                c = [float(val.replace(',', '.')) for val in item['cotes']]
-                payout = 0.0
+                c = [float(v.replace(',', '.')) for v in item['cotes'] if v]
+                if not c: continue
 
-                # Calcul TRJ dynamique selon le sport
+                # Calcul TRJ
                 if outcomes_count == 3 and len(c) >= 3:
-                    payout = (1 / ((1 / c[0]) + (1 / c[1]) + (1 / c[2]))) * 100
-                    all_odds.append([match_name, b_name, c[0], c[1], c[2], payout])
+                    trj = (1 / ((1 / c[0]) + (1 / c[1]) + (1 / c[2]))) * 100
+                    all_odds.append([match_name, b_name, c[0], c[1], c[2], trj])
                 elif outcomes_count == 2 and len(c) >= 2:
-                    # On prend la première et la dernière (évite le nul si présent)
-                    payout = (1 / ((1 / c[0]) + (1 / c[-1]))) * 100
-                    all_odds.append([match_name, b_name, c[0], c[-1], payout])
+                    trj = (1 / ((1 / c[0]) + (1 / c[-1]))) * 100
+                    all_odds.append([match_name, b_name, c[0], c[-1], trj])
             except:
                 continue
 
     driver.quit()
-
     cols = ["Match", "Bookmaker", "1", "Draw", "2", "Payout"] if outcomes_count == 3 else ["Match", "Bookmaker", "1",
                                                                                            "2", "Payout"]
     return pd.DataFrame(all_odds, columns=cols)
 
 
 # --------------------------------------------
-# TRJ display helper
+# TRJ & UI Sections (Restant du code d'origine)
 # --------------------------------------------
 def display_average_payouts(df: pd.DataFrame, sport: str):
-    if df.empty:
-        return
-    st.subheader(f"📊 Average Payout by Operator - {sport}")
+    if df.empty: return
+    st.subheader(f"📊 Average Payout - {sport}")
     df["Payout"] = pd.to_numeric(df["Payout"], errors="coerce")
-    trj_mean = df.groupby("Bookmaker")["Payout"].mean().reset_index()
-    trj_mean = trj_mean.sort_values(by="Payout", ascending=False)
-    trj_mean["Payout"] = trj_mean["Payout"].apply(lambda x: f"{x:.2f}%")
-    st.table(trj_mean)
+    res = df.groupby("Bookmaker")["Payout"].mean().reset_index().sort_values(by="Payout", ascending=False)
+    res["Payout"] = res["Payout"].apply(lambda x: f"{x:.2f}%")
+    st.dataframe(res, use_container_width=True)
 
 
-# --------------------------------------------
-# UI Core Section
-# --------------------------------------------
 def run_sport_section(sport: str, outcomes_count: int):
-    st.title(f"📊 {sport} Betting Odds Scraper")
-    competitions_df = get_competitions_from_sheets(sport)
+    st.title(f"📊 {sport} Scraper")
+    comp_df = get_competitions_from_sheets(sport)
+    if comp_df.empty: return
 
-    if competitions_df.empty:
-        st.warning(f"No competitions found for {sport}. Check Google Sheet tab '{sport}'.")
-        return
+    selected = st.multiselect("📌 Competitions", comp_df["Compétition"].tolist())
+    if selected:
+        all_books = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin", "Vbet",
+                     "Genybet", "Betsson"]
+        sel_books = st.multiselect("🎰 Bookmakers", all_books, default=all_books)
+        nb = st.slider("Matchs", 1, 15, 5)
 
-    selected_competitions = st.multiselect("📌 Select competitions", competitions_df["Compétition"].tolist())
+        if st.button("🔍 Scrap"):
+            with st.spinner("Scraping..."):
+                final = pd.DataFrame()
+                for c in selected:
+                    url = comp_df.loc[comp_df["Compétition"] == c, "URL"].values[0]
+                    df = get_match_odds(url, sel_books, nb, outcomes_count)
+                    final = pd.concat([final, df], ignore_index=True)
 
-    if selected_competitions:
-        all_bookmakers = ["Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet", "Olybet", "Bwin", "Vbet",
-                          "Genybet", "Betsson"]
-        selected_bookmakers = st.multiselect("🎰 Select bookmakers", all_bookmakers, default=all_bookmakers)
-        nb_matchs = st.slider("🔢 Number of matches per competition", 1, 20, 5)
-
-        if st.button("🔍 Start scraping"):
-            with st.spinner("Scraping in progress..."):
-                all_odds_df = pd.DataFrame()
-                for comp in selected_competitions:
-                    comp_url = competitions_df.loc[competitions_df["Compétition"] == comp, "URL"].values[0]
-                    scraped_df = get_match_odds(comp_url, selected_bookmakers, nb_matchs, outcomes_count)
-                    all_odds_df = pd.concat([all_odds_df, scraped_df], ignore_index=True)
-
-                if not all_odds_df.empty:
-                    display_average_payouts(all_odds_df, sport)
-                    st.subheader(f"📌 Retrieved {sport} Odds")
-                    styled_df = all_odds_df.copy()
-                    styled_df["Payout"] = styled_df["Payout"].apply(lambda x: f"{x:.2f}%")
-                    st.dataframe(styled_df, use_container_width=True)
+                if not final.empty:
+                    display_average_payouts(final, sport)
+                    disp = final.copy()
+                    disp["Payout"] = disp["Payout"].apply(lambda x: f"{x:.2f}%")
+                    st.dataframe(disp, use_container_width=True)
                 else:
-                    st.info(f"No odds retrieved for {sport}.")
+                    st.error(f"No odds retrieved for {sport}.")
 
 
-# --------------------------------------------
-# Main App
-# --------------------------------------------
 def main():
     st.sidebar.title("📌 Menu")
-    menu_selection = st.sidebar.radio(
-        "Choose a mode",
-        ["🏠 Home", "⚽ Football", "🎾 Tennis", "🏉 Rugby", "🏀 Basket", "🤾 Handball",
-         "🧊 Ice Hockey", "🥊 Boxing", "🏐 Volleyball", "🏈 American Football"]
-    )
-
-    if menu_selection == "🏠 Home":
-        st.title("Welcome to the Betting Odds Scraper 🏠")
-        st.write("Use the sidebar to select a sport.")
+    m = st.sidebar.radio("Sport",
+                         ["🏠 Home", "⚽ Football", "🎾 Tennis", "🏉 Rugby", "🏀 Basket", "🤾 Handball", "🧊 Ice Hockey",
+                          "🥊 Boxing"])
+    if m == "🏠 Home":
+        st.title("Betting Scraper 🏠")
     else:
-        # Extraction du nom propre pour GSheets et définition des issues
-        sport = menu_selection.split(" ")[1] if " " in menu_selection else menu_selection
-        # Logique de décompte des issues
-        outcomes = 2 if sport in ["Tennis", "Basket", "Volleyball", "American Football"] else 3
-        run_sport_section(sport, outcomes)
+        s = m.split(" ")[1]
+        out = 2 if s in ["Tennis", "Basket"] else 3
+        run_sport_section(s, out)
 
 
 if __name__ == "__main__":
