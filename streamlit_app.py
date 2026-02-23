@@ -161,19 +161,24 @@ def get_match_odds(
 
         odds_script = '''
         let results = [];
-        // On cible toutes les lignes du tableau de comparaison
+        // On cible toutes les lignes du tableau
         document.querySelectorAll("tr").forEach(row => {
-            let bookLink = row.querySelector("a[href*='/bookmaker/']");
-            // On cherche les cellules qui contiennent des chiffres (les cotes)
-            let cells = row.querySelectorAll("td.text-center, td.cote");
+            // Recherche du lien vers le bookmaker de manière plus souple
+            let bookLink = row.querySelector("a[href*='bookmaker']");
             
-            if (bookLink && cells.length >= 2) {
-                let bookId = bookLink.getAttribute("href").split("/").pop();
-                // On récupère le texte, on nettoie les espaces et on ne garde que les valeurs non vides
+            // On récupère toutes les colonnes qui contiennent potentiellement des cotes
+            // On cible les cellules text-center ou celles ayant des classes de cotes courantes
+            let cells = row.querySelectorAll("td.text-center, td.cote, td.odds");
+            
+            if (bookLink) {
+                let href = bookLink.getAttribute("href");
+                let bookId = href.split("/").pop(); 
+
+                // Extraction des textes des cellules, on nettoie et on ne garde que les nombres/points
                 let cotes = Array.from(cells)
                                  .map(c => c.innerText.trim())
-                                 .filter(txt => txt.length > 0);
-                
+                                 .filter(txt => /^[0-9.,]+$/.test(txt)); // Garde uniquement ce qui ressemble à une cote
+
                 if (cotes.length >= 2) {
                     results.push({id: bookId, cotes: cotes});
                 }
