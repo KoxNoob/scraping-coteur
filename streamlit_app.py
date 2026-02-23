@@ -141,16 +141,20 @@ def get_match_odds(
     }
 
     for match_url in match_links:
-        st.write(f"🔍 Analyse du match : {match_url.split('/')[-1]}")  # LOG pour voir l'avancée
+        st.write(f"🔍 Analyse du match : {match_url.split('/')[-1]}")
         driver.get(match_url)
 
         try:
-            # ATTENTE CRUCIALE : on attend que les lignes de cotes soient injectées
-            WebDriverWait(driver, 10).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "tr td.text-center"))
-            )
-        except:
-            st.warning(f"⚠️ Pas de tableau de cotes détecté pour ce match.")
+            # On attend explicitement qu'un lien vers un bookmaker soit visible dans le tableau
+            # C'est le signal que les cotes sont affichées
+            wait = WebDriverWait(driver, 15)
+            wait.until(EC.visibility_of_element_located((By.CSS_SELECTOR, "a[href*='/bookmaker/']")))
+
+            # Petit scroll pour forcer l'activation des scripts si besoin
+            driver.execute_script("window.scrollBy(0, 300);")
+            time.sleep(1)
+        except Exception:
+            st.warning(f"⚠️ Timeout : Les cotes n'ont pas chargé pour {match_url}")
             continue
 
 
@@ -159,22 +163,21 @@ def get_match_odds(
 
         odds_script = '''
         let results = [];
-        // On cible toutes les lignes qui contiennent un lien vers un bookmaker
+        // On cible toutes les lignes du tableau de comparaison
         document.querySelectorAll("tr").forEach(row => {
             let bookLink = row.querySelector("a[href*='/bookmaker/']");
-            if (bookLink) {
-                let href = bookLink.getAttribute("href");
-                let bookId = href.split("/").pop(); // Récupère le '24'
-
-                // On récupère toutes les colonnes text-center (les cotes)
-                let cells = row.querySelectorAll("td.text-center");
-                let cotes = Array.from(cells).map(c => c.innerText.trim());
-
-                // On cherche le TRJ (souvent la dernière colonne ou une classe spécifique)
-                let payout = row.querySelector(".payout, .text-bg-warning")?.innerText.trim() || "N/A";
-
+            // On cherche les cellules qui contiennent des chiffres (les cotes)
+            let cells = row.querySelectorAll("td.text-center, td.cote");
+            
+            if (bookLink && cells.length >= 2) {
+                let bookId = bookLink.getAttribute("href").split("/").pop();
+                // On récupère le texte, on nettoie les espaces et on ne garde que les valeurs non vides
+                let cotes = Array.from(cells)
+                                 .map(c => c.innerText.trim())
+                                 .filter(txt => txt.length > 0);
+                
                 if (cotes.length >= 2) {
-                    results.push({id: bookId, cotes: cotes, payout: payout});
+                    results.push({id: bookId, cotes: cotes});
                 }
             }
         });
