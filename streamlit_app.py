@@ -123,7 +123,7 @@ def get_match_odds(
                 "32": "Genybet", "33": "Winamax", "37": "Vbet", "43": "Betsson", "44": "Olybet"}
 
     for match_url in match_links:
-        st.info(f"🔗 Navigation vers : {match_url}")
+
         driver.get(match_url)
 
         try:
@@ -172,7 +172,7 @@ def get_match_odds(
 
                 # Calcul automatique du TRJ (Payout)
                 inv_sum = sum(1 / val for val in c[:outcomes_count])
-                payout_val = (1 / inv_sum) * 100
+                payout_val = round((1 / inv_sum) * 100, 2)
 
                 if outcomes_count == 3:
                     all_odds.append([match_name, b_name, c[0], c[1], c[2], payout_val])
