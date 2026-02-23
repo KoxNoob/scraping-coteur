@@ -124,31 +124,6 @@ def get_match_odds(
     match_links = list(dict.fromkeys(match_links))[:nb_matchs]
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
     all_odds = []
 
     # Dictionnaire de correspondance ID -> Nom (à compléter si besoin)
@@ -163,23 +138,6 @@ def get_match_odds(
         time.sleep(2)  # Petit délai pour le rendu du tableau
 
         # Script JS adapté à la nouvelle structure tr/td
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
         odds_script = '''
         let results = [];
@@ -210,36 +168,36 @@ def get_match_odds(
         except:
             continue
 
-        match_name = match_url.split("/")[-1].replace("-", " ").title()
-
+        raw_name = match_url.split("/")[-1].replace("-", " ").title()
+        # Supprime les chiffres (ID) à la fin du nom
+        match_name = re.sub(r'\s*\d+$', '', raw_name).strip()
 
         for item in raw_data:
-            # On traduit l'ID en nom de bookmaker
             b_name = book_map.get(item['id'], f"Bookmaker_{item['id']}")
 
-
             if b_name not in selected_bookmakers and item['id'] not in selected_bookmakers:
-
-
-
-
-
-
-
-
-
-
                 continue
 
-            c = item['cotes']
-            p = item['payout']
+            # Conversion des cotes en nombres flottants
+            try:
+                c = [float(v.replace(',', '.')) for v in item['cotes'] if v]
+                if not c: continue
+            except ValueError:
+                continue
 
-            # Logique d'insertion selon le sport (2 ou 3 issues)
+            # CALCUL DU PAYOUT (TRJ)
+            # Formule : 1 / ( (1/Cote1) + (1/Cote2) + ... ) * 100
+            try:
+                inv_sum = sum(1 / val for val in c[:outcomes_count])
+                payout_val = (1 / inv_sum) * 100
+            except ZeroDivisionError:
+                payout_val = 0.0
+
+            # Logique d'insertion
             if outcomes_count == 3 and len(c) >= 3:
-                all_odds.append([match_name, b_name, c[0], c[1], c[2], p])
+                all_odds.append([match_name, b_name, c[0], c[1], c[2], payout_val])
             elif outcomes_count == 2 and len(c) >= 2:
-                # Pour le tennis, on ignore souvent le nul s'il existe par erreur
-                all_odds.append([match_name, b_name, c[0], c[-1], p])
+                all_odds.append([match_name, b_name, c[0], c[-1], payout_val])
 
     driver.quit()
 
@@ -378,7 +336,11 @@ def run_sport_section(sport: str, outcomes_count: int):
                 if not all_odds_df.empty:
                     display_average_payouts(all_odds_df, sport)
                     st.subheader(f"📌 Retrieved {sport} Odds")
-                    st.dataframe(all_odds_df)
+
+                    # On crée une copie pour l'affichage avec le symbole %
+                    display_df = all_odds_df.copy()
+                    display_df["Payout"] = display_df["Payout"].apply(lambda x: f"{x:.2f}%")
+                    st.dataframe(display_df)
                 else:
                     st.info(f"No odds retrieved for {sport}.")
     else:
