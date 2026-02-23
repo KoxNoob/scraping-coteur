@@ -185,6 +185,7 @@ def get_match_odds(
         '''
 
         try:
+            st.write(f"DEBUG: Nombre de lignes TR trouvées : {len(driver.find_elements(By.TAG_NAME, 'tr'))}")
             raw_data = driver.execute_script(odds_script)
         except:
             continue
