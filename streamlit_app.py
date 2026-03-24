@@ -221,7 +221,7 @@ def main():
         "Choose a mode",
         [
             "🏠 Home", "⚽ Football", "🎾 Tennis", "🏉 Rugby",
-            "🏀 Basket", "🤾 Handball",
+            "🏀 Basket", "🤾 Handball", "⚾ Baseball",
             "🧊 Ice Hockey", "🥊 Boxing", "🏐 Volleyball", "🏈 American Football"
         ]
     )
@@ -272,6 +272,11 @@ def main():
 
     elif menu_selection == "🏈 American Football":
         sport = "American Football"
+        outcomes_count = 2
+        run_sport_section(sport, outcomes_count)
+
+    elif menu_selection == "⚾ Baseball":
+        sport = "Baseball"
         outcomes_count = 2
         run_sport_section(sport, outcomes_count)
 
