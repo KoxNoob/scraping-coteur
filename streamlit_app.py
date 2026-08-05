@@ -201,39 +201,39 @@ def display_average_payouts(df: pd.DataFrame, sport: str, aggregate: bool = Fals
 
     df = df.copy()
 
-    # Nettoyage des données Payout (sécurité)
     if df["Payout"].dtype == object:
         df["Payout"] = df["Payout"].astype(str).str.replace("%", "", regex=False).str.replace(",", ".", regex=False)
         df = df[df["Payout"].str.replace(".", "", 1).str.isnumeric() | df["Payout"].str.match(r"^\d+(\.\d+)?$")]
 
     df["Payout"] = pd.to_numeric(df["Payout"], errors="coerce")
 
-    # Ordre imposé des bookmakers selon la capture d'écran
+    # Ordre de référence STRICT
     custom_order = [
         "Winamax", "Unibet", "Betclic", "Pmu", "Betsson",
         "Bet365", "Olybet", "Vbet",
-        # On garde les autres à la fin au cas où ils sont sélectionnés
         "Bwin", "Genybet", "Feelingbet"
     ]
 
-    # Sous-fonction pour éviter de répéter le code de tri et de formatage
     def process_and_display(data_df, title):
         trj_mean = data_df.groupby("Bookmaker")["Payout"].mean().reset_index()
 
-        # 1. Appliquer l'ordre personnalisé
-        trj_mean["Bookmaker"] = pd.Categorical(trj_mean["Bookmaker"], categories=custom_order, ordered=True)
-        trj_mean = trj_mean.sort_values(by="Bookmaker")
+        # --- NOUVEAUTÉ : On force l'affichage de tous les bookmakers ---
+        ref_df = pd.DataFrame({"Bookmaker": custom_order})
+        trj_mean = pd.merge(ref_df, trj_mean, on="Bookmaker", how="left")
 
-        # 2. Formater le TRJ avec une virgule
-        trj_mean["Average Payout"] = trj_mean["Payout"].apply(lambda x: f"{x:.2f}%".replace(".", ","))
+        # Formatage avec virgule, et ajout d'un tiret si pas de données
+        def format_payout(x):
+            if pd.isna(x):
+                return "-"
+            return f"{x:.2f}%".replace(".", ",")
 
-        # Conserver uniquement les colonnes à afficher
+        trj_mean["Average Payout"] = trj_mean["Payout"].apply(format_payout)
+
         trj_mean = trj_mean[["Bookmaker", "Average Payout"]]
 
         st.subheader(title)
         st.dataframe(trj_mean, hide_index=True)
 
-    # Affichage selon l'option choisie par l'utilisateur
     if aggregate or "Competition" not in df.columns:
         process_and_display(df, f"📊 Global Average Payout by Operator - {sport}")
     else:
@@ -323,17 +323,16 @@ def run_sport_section(sport: str, outcomes_count: int):
     selected_competitions = st.multiselect("📌 Select competitions", competitions_df["Compétition"].tolist())
 
     if selected_competitions:
+        # --- AJOUT DE BET365 ---
         all_bookmakers = [
-            "Winamax", "Unibet", "Betclic", "Pmu",
-            "Olybet","Vbet", "Genybet", "Feelingbet", "Betsson"
+            "Winamax", "Unibet", "Betclic", "Pmu", "Betsson",
+            "Bet365", "Olybet", "Bwin", "Vbet", "Genybet", "Feelingbet"
         ]
         selected_bookmakers = st.multiselect("🎰 Select bookmakers", all_bookmakers, default=all_bookmakers)
 
         nb_matchs = st.slider("🔢 Number of matches per competition", 1, 20, 5)
 
-        # --- NOUVEAUTÉ : La case à cocher ---
-        aggregate_payouts = st.checkbox("Show global average payout across all selected competitions",
-                                        value=False)
+        aggregate_payouts = st.checkbox("Show global average payout across all selected competitions", value=False)
 
         if st.button("🔍 Start scraping"):
             with st.spinner("Scraping in progress..."):
@@ -352,12 +351,10 @@ def run_sport_section(sport: str, outcomes_count: int):
                     )
 
                     if not scraped_df.empty:
-                        # --- NOUVEAUTÉ : On insère la colonne Compétition ---
                         scraped_df.insert(0, "Competition", comp)
                         all_odds_df = pd.concat([all_odds_df, scraped_df], ignore_index=True)
 
                 if not all_odds_df.empty:
-                    # On appelle l'affichage avec la préférence de la checkbox
                     display_average_payouts(all_odds_df, sport, aggregate=aggregate_payouts)
 
                     st.subheader(f"📌 Retrieved {sport} Odds")
