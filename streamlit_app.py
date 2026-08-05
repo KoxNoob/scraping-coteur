@@ -207,7 +207,7 @@ def display_average_payouts(df: pd.DataFrame, sport: str, aggregate: bool = Fals
 
     df["Payout"] = pd.to_numeric(df["Payout"], errors="coerce")
 
-    # Ordre de référence STRICT
+    # Ordre de référence STRICT (8 bookmakers)
     custom_order = [
         "Winamax", "Unibet", "Betclic", "Pmu", "Betsson",
         "Bet365", "Olybet", "Vbet"
@@ -216,15 +216,19 @@ def display_average_payouts(df: pd.DataFrame, sport: str, aggregate: bool = Fals
     def process_and_display(data_df, title):
         trj_mean = data_df.groupby("Bookmaker")["Payout"].mean().reset_index()
 
-        # --- NOUVEAUTÉ : On force l'affichage de tous les bookmakers ---
+        # On force l'affichage de tous les bookmakers
         ref_df = pd.DataFrame({"Bookmaker": custom_order})
         trj_mean = pd.merge(ref_df, trj_mean, on="Bookmaker", how="left")
 
-        # Formatage avec virgule, et ajout d'un tiret si pas de données
+        # --- MISE À JOUR : Arrondi au 0.25 le plus proche ---
         def format_payout(x):
             if pd.isna(x):
                 return "-"
-            return f"{x:.2f}%".replace(".", ",")
+
+            # Astuce mathématique pour arrondir au 0.25 le plus proche
+            rounded_x = round(x * 4) / 4
+
+            return f"{rounded_x:.2f}%".replace(".", ",")
 
         trj_mean["Average Payout"] = trj_mean["Payout"].apply(format_payout)
 
