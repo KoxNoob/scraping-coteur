@@ -187,11 +187,10 @@ def get_match_odds(
     return pd.DataFrame(all_odds, columns=cols)
 
 
-
 # --------------------------------------------
 # TRJ display helper (shared)
 # --------------------------------------------
-def display_average_payouts(df: pd.DataFrame, sport: str):
+def display_average_payouts(df: pd.DataFrame, sport: str, aggregate: bool = False):
     if df is None or df.empty:
         st.info(f"No odds data available to compute TRJ for {sport}.")
         return
@@ -201,16 +200,36 @@ def display_average_payouts(df: pd.DataFrame, sport: str):
         return
 
     df = df.copy()
-    df["Payout"] = df["Payout"].astype(str).str.replace("%", "", regex=False).str.replace(",", ".", regex=False)
-    df = df[df["Payout"].str.replace(".", "", 1).str.isnumeric() | df["Payout"].str.match(r"^\d+(\.\d+)?$")]
+
+    # Nettoyage des données Payout (sécurité)
+    if df["Payout"].dtype == object:
+        df["Payout"] = df["Payout"].astype(str).str.replace("%", "", regex=False).str.replace(",", ".", regex=False)
+        df = df[df["Payout"].str.replace(".", "", 1).str.isnumeric() | df["Payout"].str.match(r"^\d+(\.\d+)?$")]
+
     df["Payout"] = pd.to_numeric(df["Payout"], errors="coerce")
 
-    trj_mean = df.groupby("Bookmaker")["Payout"].mean().reset_index()
-    trj_mean.columns = ["Bookmaker", "Average Payout"]
-    trj_mean = trj_mean.sort_values(by="Average Payout", ascending=False)
-    trj_mean["Average Payout"] = trj_mean["Average Payout"].apply(lambda x: f"{x:.2f}%")
-    st.subheader(f"📊 Average Payout by Operator - {sport}")
-    st.dataframe(trj_mean)
+    if aggregate or "Competition" not in df.columns:
+        # Affichage global (mix de toutes les compétitions)
+        trj_mean = df.groupby("Bookmaker")["Payout"].mean().reset_index()
+        trj_mean.columns = ["Bookmaker", "Average Payout"]
+        trj_mean = trj_mean.sort_values(by="Average Payout", ascending=False)
+        trj_mean["Average Payout"] = trj_mean["Average Payout"].apply(lambda x: f"{x:.2f}%")
+
+        st.subheader(f"📊 Global Average Payout by Operator - {sport}")
+        st.dataframe(trj_mean)
+    else:
+        # Affichage détaillé : 1 tableau par compétition
+        competitions = df["Competition"].unique()
+        for comp in competitions:
+            st.subheader(f"📊 Average Payout - {comp}")
+            comp_df = df[df["Competition"] == comp]
+
+            trj_mean = comp_df.groupby("Bookmaker")["Payout"].mean().reset_index()
+            trj_mean.columns = ["Bookmaker", "Average Payout"]
+            trj_mean = trj_mean.sort_values(by="Average Payout", ascending=False)
+            trj_mean["Average Payout"] = trj_mean["Average Payout"].apply(lambda x: f"{x:.2f}%")
+
+            st.dataframe(trj_mean)
 
 # part2.py
 # Streamlit UI integrating Football, Tennis, Rugby, Basket and Handball
@@ -281,7 +300,6 @@ def main():
         run_sport_section(sport, outcomes_count)
 
 
-
 def run_sport_section(sport: str, outcomes_count: int):
     st.title(f"📊 {sport} Betting Odds Scraper")
 
@@ -302,6 +320,10 @@ def run_sport_section(sport: str, outcomes_count: int):
 
         nb_matchs = st.slider("🔢 Number of matches per competition", 1, 20, 5)
 
+        # --- NOUVEAUTÉ : La case à cocher ---
+        aggregate_payouts = st.checkbox("Show global average payout across all selected competitions",
+                                        value=False)
+
         if st.button("🔍 Start scraping"):
             with st.spinner("Scraping in progress..."):
                 all_odds_df = pd.DataFrame()
@@ -317,10 +339,16 @@ def run_sport_section(sport: str, outcomes_count: int):
                         nb_matchs=nb_matchs,
                         outcomes_count=outcomes_count
                     )
-                    all_odds_df = pd.concat([all_odds_df, scraped_df], ignore_index=True)
+
+                    if not scraped_df.empty:
+                        # --- NOUVEAUTÉ : On insère la colonne Compétition ---
+                        scraped_df.insert(0, "Competition", comp)
+                        all_odds_df = pd.concat([all_odds_df, scraped_df], ignore_index=True)
 
                 if not all_odds_df.empty:
-                    display_average_payouts(all_odds_df, sport)
+                    # On appelle l'affichage avec la préférence de la checkbox
+                    display_average_payouts(all_odds_df, sport, aggregate=aggregate_payouts)
+
                     st.subheader(f"📌 Retrieved {sport} Odds")
                     st.dataframe(all_odds_df)
                 else:
