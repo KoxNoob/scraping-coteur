@@ -208,28 +208,39 @@ def display_average_payouts(df: pd.DataFrame, sport: str, aggregate: bool = Fals
 
     df["Payout"] = pd.to_numeric(df["Payout"], errors="coerce")
 
-    if aggregate or "Competition" not in df.columns:
-        # Affichage global (mix de toutes les compétitions)
-        trj_mean = df.groupby("Bookmaker")["Payout"].mean().reset_index()
-        trj_mean.columns = ["Bookmaker", "Average Payout"]
-        trj_mean = trj_mean.sort_values(by="Average Payout", ascending=False)
-        trj_mean["Average Payout"] = trj_mean["Average Payout"].apply(lambda x: f"{x:.2f}%")
+    # Ordre imposé des bookmakers selon la capture d'écran
+    custom_order = [
+        "Winamax", "Unibet", "Betclic", "Pmu", "Betsson",
+        "Bet365", "Olybet", "Vbet",
+        # On garde les autres à la fin au cas où ils sont sélectionnés
+        "Bwin", "Genybet", "Feelingbet"
+    ]
 
-        st.subheader(f"📊 Global Average Payout by Operator - {sport}")
-        st.dataframe(trj_mean)
+    # Sous-fonction pour éviter de répéter le code de tri et de formatage
+    def process_and_display(data_df, title):
+        trj_mean = data_df.groupby("Bookmaker")["Payout"].mean().reset_index()
+
+        # 1. Appliquer l'ordre personnalisé
+        trj_mean["Bookmaker"] = pd.Categorical(trj_mean["Bookmaker"], categories=custom_order, ordered=True)
+        trj_mean = trj_mean.sort_values(by="Bookmaker")
+
+        # 2. Formater le TRJ avec une virgule
+        trj_mean["Average Payout"] = trj_mean["Payout"].apply(lambda x: f"{x:.2f}%".replace(".", ","))
+
+        # Conserver uniquement les colonnes à afficher
+        trj_mean = trj_mean[["Bookmaker", "Average Payout"]]
+
+        st.subheader(title)
+        st.dataframe(trj_mean, hide_index=True)
+
+    # Affichage selon l'option choisie par l'utilisateur
+    if aggregate or "Competition" not in df.columns:
+        process_and_display(df, f"📊 Global Average Payout by Operator - {sport}")
     else:
-        # Affichage détaillé : 1 tableau par compétition
         competitions = df["Competition"].unique()
         for comp in competitions:
-            st.subheader(f"📊 Average Payout - {comp}")
             comp_df = df[df["Competition"] == comp]
-
-            trj_mean = comp_df.groupby("Bookmaker")["Payout"].mean().reset_index()
-            trj_mean.columns = ["Bookmaker", "Average Payout"]
-            trj_mean = trj_mean.sort_values(by="Average Payout", ascending=False)
-            trj_mean["Average Payout"] = trj_mean["Average Payout"].apply(lambda x: f"{x:.2f}%")
-
-            st.dataframe(trj_mean)
+            process_and_display(comp_df, f"📊 Average Payout - {comp}")
 
 # part2.py
 # Streamlit UI integrating Football, Tennis, Rugby, Basket and Handball
@@ -313,8 +324,8 @@ def run_sport_section(sport: str, outcomes_count: int):
 
     if selected_competitions:
         all_bookmakers = [
-            "Winamax", "Unibet", "Betclic", "Pmu", "ParionsSport", "Zebet",
-            "Olybet", "Bwin", "Vbet", "Genybet", "Feelingbet", "Betsson"
+            "Winamax", "Unibet", "Betclic", "Pmu",
+            "Olybet","Vbet", "Genybet", "Feelingbet", "Betsson"
         ]
         selected_bookmakers = st.multiselect("🎰 Select bookmakers", all_bookmakers, default=all_bookmakers)
 
