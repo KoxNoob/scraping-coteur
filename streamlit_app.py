@@ -210,8 +210,7 @@ def display_average_payouts(df: pd.DataFrame, sport: str, aggregate: bool = Fals
     # Ordre de référence STRICT
     custom_order = [
         "Winamax", "Unibet", "Betclic", "Pmu", "Betsson",
-        "Bet365", "Olybet", "Vbet",
-        "Bwin", "Genybet", "Feelingbet"
+        "Bet365", "Olybet", "Vbet"
     ]
 
     def process_and_display(data_df, title):
@@ -326,7 +325,7 @@ def run_sport_section(sport: str, outcomes_count: int):
         # --- AJOUT DE BET365 ---
         all_bookmakers = [
             "Winamax", "Unibet", "Betclic", "Pmu", "Betsson",
-            "Bet365", "Olybet", "Bwin", "Vbet", "Genybet", "Feelingbet"
+            "Bet365", "Olybet", "Vbet"
         ]
         selected_bookmakers = st.multiselect("🎰 Select bookmakers", all_bookmakers, default=all_bookmakers)
 
