@@ -25,20 +25,33 @@ from webdriver_manager.firefox import GeckoDriverManager
 def init_driver(headless: bool = True):
     """
     Initialize a Firefox WebDriver with GeckoDriverManager and anti-detection headers.
+    Optimized for Streamlit Cloud (low RAM, fast page load).
     """
     firefox_options = Options()
     if headless:
         firefox_options.add_argument("--headless")
 
+    # --- NOUVEAUTÉ : Stratégie de chargement "eager" ---
+    # N'attend pas le chargement des images/iframes/pubs, juste le code HTML/DOM.
+    firefox_options.page_load_strategy = 'eager'
+
     # Anti-detection: Simulate a real browser user agent
     firefox_options.set_preference("general.useragent.override",
                                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0")
+
+    # --- NOUVEAUTÉ : Bloquer les images pour économiser de la RAM ---
+    firefox_options.set_preference("permissions.default.image", 2)
 
     firefox_options.add_argument("--no-sandbox")
     firefox_options.add_argument("--disable-dev-shm-usage")
 
     service = Service(GeckoDriverManager().install())
     driver = webdriver.Firefox(service=service, options=firefox_options)
+
+    # --- NOUVEAUTÉ : Timeout de 30 secondes ---
+    # Si une page met plus de 30 secondes, on coupe court plutôt que de faire planter Streamlit
+    driver.set_page_load_timeout(30)
+
     return driver
 
 
