@@ -17,6 +17,7 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from webdriver_manager.firefox import GeckoDriverManager
+from selenium.common.exceptions import TimeoutException
 
 
 # ---------------------------
@@ -116,9 +117,16 @@ def get_match_odds(
         headless: bool = True
 ) -> pd.DataFrame:
     driver = init_driver(headless=headless)
-    driver.get(competition_url)
 
-    # 1. Récupération des liens des matchs
+    # --- NOUVEAUTÉ 1 : Protection du chargement de la page de la compétition ---
+    try:
+        driver.get(competition_url)
+    except TimeoutException:
+        st.warning(f"⏳ La page de la compétition a mis plus de 30s à charger (ignorée).")
+        driver.quit()
+        return pd.DataFrame()
+
+    # Récupération des liens des matchs
     match_links = []
     try:
         # On attend les lignes de match sur la page compétition
@@ -137,7 +145,12 @@ def get_match_odds(
 
     for match_url in match_links:
 
-        driver.get(match_url)
+        # --- NOUVEAUTÉ 2 : Protection du chargement de la page du match ---
+        try:
+            driver.get(match_url)
+        except TimeoutException:
+            st.warning(f"⏳ Le match a mis plus de 30s à charger (ignoré) : {match_url.split('/')[-1]}")
+            continue
 
         try:
             # On attend que le tbody contenant les cotes soit chargé
@@ -152,7 +165,6 @@ def get_match_odds(
         # Script JS optimisé pour le tbody et ps-4
         odds_script = '''
         let results = [];
-        // On cible uniquement les lignes à l'intérieur du tbody
         document.querySelectorAll("tbody tr").forEach(row => {
             let bookLink = row.querySelector("td.ps-4 a[href*='/bookmaker/']");
             let cells = row.querySelectorAll("td.text-center");
