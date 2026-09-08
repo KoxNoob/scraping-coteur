@@ -11,46 +11,42 @@ import time
 from typing import Dict, List, Tuple
 from google.oauth2.service_account import Credentials
 from selenium import webdriver
-from selenium.webdriver.firefox.service import Service
-from selenium.webdriver.firefox.options import Options
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-from webdriver_manager.firefox import GeckoDriverManager
 from selenium.common.exceptions import TimeoutException
-
 
 # ---------------------------
 # Selenium driver initializer
 # ---------------------------
 def init_driver(headless: bool = True):
     """
-    Initialize a Firefox WebDriver with GeckoDriverManager and anti-detection headers.
+    Initialize a Chrome WebDriver using Selenium Manager (built-in).
     Optimized for Streamlit Cloud (low RAM, fast page load).
     """
-    firefox_options = Options()
+    chrome_options = Options()
     if headless:
-        firefox_options.add_argument("--headless")
+        chrome_options.add_argument("--headless=new")
 
-    # --- NOUVEAUTÉ : Stratégie de chargement "eager" ---
-    # N'attend pas le chargement des images/iframes/pubs, juste le code HTML/DOM.
-    firefox_options.page_load_strategy = 'eager'
+    # Stratégie de chargement "eager" (HTML/DOM seulement)
+    chrome_options.page_load_strategy = 'eager'
 
     # Anti-detection: Simulate a real browser user agent
-    firefox_options.set_preference("general.useragent.override",
-                                   "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0")
+    chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
 
-    # --- NOUVEAUTÉ : Bloquer les images pour économiser de la RAM ---
-    firefox_options.set_preference("permissions.default.image", 2)
+    # Bloquer les images pour économiser de la RAM
+    prefs = {"profile.managed_default_content_settings.images": 2}
+    chrome_options.add_experimental_option("prefs", prefs)
 
-    firefox_options.add_argument("--no-sandbox")
-    firefox_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
 
-    service = Service(GeckoDriverManager().install())
-    driver = webdriver.Firefox(service=service, options=firefox_options)
+    # Selenium >= 4.11.0 télécharge automatiquement le navigateur et le driver
+    driver = webdriver.Chrome(options=chrome_options)
 
-    # --- NOUVEAUTÉ : Timeout de 30 secondes ---
-    # Si une page met plus de 30 secondes, on coupe court plutôt que de faire planter Streamlit
+    # Timeout de 30 secondes
     driver.set_page_load_timeout(30)
 
     return driver
