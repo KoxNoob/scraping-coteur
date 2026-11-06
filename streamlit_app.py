@@ -114,51 +114,60 @@ def get_match_odds(
 ) -> pd.DataFrame:
     driver = init_driver(headless=headless)
 
-    # --- NOUVEAUTÉ 1 : Protection du chargement de la page de la compétition ---
+    st.write(f"🔍 **Diagnostic URL :** {competition_url}")
+
     try:
         driver.get(competition_url)
     except TimeoutException:
-        st.warning(f"⏳ La page de la compétition a mis plus de 30s à charger (ignorée).")
+        st.error("⏳ Timeout : La page compétition n'a pas répondu en 30s.")
         driver.quit()
         return pd.DataFrame()
+
+    # 1. Vérification Anti-bot (Affiche le vrai titre de la page vue par Selenium)
+    st.info(f"📄 **Titre de la page lue par le bot :** {driver.title}")
 
     # Récupération des liens des matchs
     match_links = []
     try:
-        # On attend les lignes de match sur la page compétition
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "match-row")))
         anchors = driver.find_elements(By.CSS_SELECTOR, ".match-row a[href*='/cote/']")
         for a in anchors:
             match_links.append(a.get_attribute("href"))
-    except:
+    except Exception as e:
+        st.error(
+            "❌ **Erreur Étape 1 :** Impossible de trouver les matchs (`.match-row`). Soit Cloudflare bloque, soit le design du site a changé.")
+        driver.quit()
+        return pd.DataFrame()
+
+    if not match_links:
+        st.warning("⚠️ La classe `.match-row` existe, mais aucun lien contenant `/cote/` n'a été trouvé dedans.")
         driver.quit()
         return pd.DataFrame()
 
     match_links = list(dict.fromkeys(match_links))[:nb_matchs]
+    st.success(f"✅ {len(match_links)} matchs trouvés ! Scraping des cotes en cours...")
+
     all_odds = []
     book_map = {"20": "Unibet", "21": "Pmu", "22": "ParionsSport", "24": "Betclic",
                 "32": "Genybet", "33": "Winamax", "37": "Vbet", "43": "Betsson", "44": "Olybet"}
 
     for match_url in match_links:
-
-        # --- NOUVEAUTÉ 2 : Protection du chargement de la page du match ---
         try:
             driver.get(match_url)
         except TimeoutException:
-            st.warning(f"⏳ Le match a mis plus de 30s à charger (ignoré) : {match_url.split('/')[-1]}")
+            st.warning(f"⏳ Timeout sur le match : {match_url.split('/')[-1]}")
             continue
 
         try:
-            # On attend que le tbody contenant les cotes soit chargé
-            WebDriverWait(driver, 15).until(
+            WebDriverWait(driver, 10).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "tbody tr td.ps-4"))
             )
-            time.sleep(1)  # Sécurité pour injection JS
-        except:
-            st.warning(f"⚠️ Tableau non trouvé pour {match_url}")
+            time.sleep(1)
+        except Exception as e:
+            st.error(
+                f"⚠️ **Erreur Étape 2 :** Tableau des cotes introuvable sur la page du match. (Sélecteur `tbody tr td.ps-4` obsolète). Match : {match_url.split('/')[-1]}")
             continue
 
-        # Script JS optimisé pour le tbody et ps-4
         odds_script = '''
         let results = [];
         document.querySelectorAll("tbody tr").forEach(row => {
@@ -178,7 +187,10 @@ def get_match_odds(
 
         raw_data = driver.execute_script(odds_script)
 
-        # Nettoyage du nom du match (retrait de l'ID numérique)
+        if not raw_data:
+            st.warning(
+                f"⚠️ Le JavaScript n'a remonté aucune cote pour ce match. Identifiants bookmakers ou structure JS changés.")
+
         raw_name = match_url.split("/")[-1].replace("-", " ").title()
         match_name = re.sub(r'\s*\d+$', '', raw_name).strip()
 
@@ -186,12 +198,10 @@ def get_match_odds(
             b_name = book_map.get(item['id'], f"ID_{item['id']}")
             if b_name not in selected_bookmakers:
                 continue
-
             try:
                 c = [float(v.replace(',', '.')) for v in item['cotes'] if v]
                 if len(c) < outcomes_count: continue
 
-                # Calcul automatique du TRJ (Payout)
                 inv_sum = sum(1 / val for val in c[:outcomes_count])
                 payout_val = round((1 / inv_sum) * 100, 2)
 
