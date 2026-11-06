@@ -168,7 +168,7 @@ def get_match_odds(
                 f"⚠️ **Erreur Étape 2 :** Tableau des cotes introuvable sur la page du match. (Sélecteur `tbody tr td.ps-4` obsolète). Match : {match_url.split('/')[-1]}")
             continue
 
-        # Script JS assoupli pour voir exactement le texte brut
+            # Script JS optimisé avec nettoyage des ID et des espaces
         odds_script = '''
             let results = [];
             document.querySelectorAll("tbody tr").forEach(row => {
@@ -176,8 +176,14 @@ def get_match_odds(
                 let cells = row.querySelectorAll("td.text-center");
 
                 if (bookLink && cells.length >= 2) {
-                    let bookId = bookLink.getAttribute("href").split("/").pop();
-                    let cotes = Array.from(cells).map(c => c.innerText.replace(/\\s+/g, ' ').trim());
+                    // On récupère la fin de l'URL et on coupe au "?" s'il existe
+                    let rawId = bookLink.getAttribute("href").split("/").pop();
+                    let bookId = rawId.split("?")[0];
+
+                    let cotes = Array.from(cells)
+                                     .map(c => c.innerText.replace(/\\s+/g, '').trim())
+                                     .filter(txt => /^[0-9.,]+$/.test(txt));
+
                     results.push({id: bookId, cotes: cotes});
                 }
             });
@@ -186,8 +192,6 @@ def get_match_odds(
 
         raw_data = driver.execute_script(odds_script)
 
-        # Affiche les données brutes directement sur l'interface Streamlit
-        st.write(f"🔍 **Données brutes JS (Match : {match_url.split('/')[-1]}) :**", raw_data)
 
         if not raw_data:
             st.warning(
