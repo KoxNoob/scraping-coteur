@@ -168,24 +168,26 @@ def get_match_odds(
                 f"⚠️ **Erreur Étape 2 :** Tableau des cotes introuvable sur la page du match. (Sélecteur `tbody tr td.ps-4` obsolète). Match : {match_url.split('/')[-1]}")
             continue
 
+        # Script JS assoupli pour voir exactement le texte brut
         odds_script = '''
-        let results = [];
-        document.querySelectorAll("tbody tr").forEach(row => {
-            let bookLink = row.querySelector("td.ps-4 a[href*='/bookmaker/']");
-            let cells = row.querySelectorAll("td.text-center");
+            let results = [];
+            document.querySelectorAll("tbody tr").forEach(row => {
+                let bookLink = row.querySelector("td.ps-4 a[href*='/bookmaker/']");
+                let cells = row.querySelectorAll("td.text-center");
 
-            if (bookLink && cells.length >= 2) {
-                let bookId = bookLink.getAttribute("href").split("/").pop();
-                let cotes = Array.from(cells)
-                                 .map(c => c.innerText.trim())
-                                 .filter(txt => /^[0-9.,]+$/.test(txt));
-                results.push({id: bookId, cotes: cotes});
-            }
-        });
-        return results;
-        '''
+                if (bookLink && cells.length >= 2) {
+                    let bookId = bookLink.getAttribute("href").split("/").pop();
+                    let cotes = Array.from(cells).map(c => c.innerText.replace(/\\s+/g, ' ').trim());
+                    results.push({id: bookId, cotes: cotes});
+                }
+            });
+            return results;
+            '''
 
         raw_data = driver.execute_script(odds_script)
+
+        # Affiche les données brutes directement sur l'interface Streamlit
+        st.write(f"🔍 **Données brutes JS (Match : {match_url.split('/')[-1]}) :**", raw_data)
 
         if not raw_data:
             st.warning(
