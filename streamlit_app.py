@@ -114,17 +114,12 @@ def get_match_odds(
 ) -> pd.DataFrame:
     driver = init_driver(headless=headless)
 
-    st.write(f"🔍 **Diagnostic URL :** {competition_url}")
-
     try:
         driver.get(competition_url)
     except TimeoutException:
-        st.error("⏳ Timeout : La page compétition n'a pas répondu en 30s.")
+        st.warning(f"⏳ La page de la compétition a mis plus de 30s à charger (ignorée).")
         driver.quit()
         return pd.DataFrame()
-
-    # 1. Vérification Anti-bot (Affiche le vrai titre de la page vue par Selenium)
-    st.info(f"📄 **Titre de la page lue par le bot :** {driver.title}")
 
     # Récupération des liens des matchs
     match_links = []
@@ -133,69 +128,55 @@ def get_match_odds(
         anchors = driver.find_elements(By.CSS_SELECTOR, ".match-row a[href*='/cote/']")
         for a in anchors:
             match_links.append(a.get_attribute("href"))
-    except Exception as e:
-        st.error(
-            "❌ **Erreur Étape 1 :** Impossible de trouver les matchs (`.match-row`). Soit Cloudflare bloque, soit le design du site a changé.")
-        driver.quit()
-        return pd.DataFrame()
-
-    if not match_links:
-        st.warning("⚠️ La classe `.match-row` existe, mais aucun lien contenant `/cote/` n'a été trouvé dedans.")
+    except:
         driver.quit()
         return pd.DataFrame()
 
     match_links = list(dict.fromkeys(match_links))[:nb_matchs]
-    st.success(f"✅ {len(match_links)} matchs trouvés ! Scraping des cotes en cours...")
-
     all_odds = []
     book_map = {"20": "Unibet", "21": "Pmu", "22": "ParionsSport", "24": "Betclic",
-                "32": "Genybet", "33": "Winamax", "37": "Vbet", "43": "Betsson", "44": "Olybet"}
+                "30": "Bwin", "32": "Genybet", "33": "Winamax", "37": "Vbet",
+                "42": "Pokerstars", "43": "Betsson", "44": "Olybet", "46": "Partouche Sport"}
+    # J'ai ajouté quelques ID supplémentaires vus dans vos logs bruts (Bwin, Pokerstars, Partouche)
 
     for match_url in match_links:
         try:
             driver.get(match_url)
         except TimeoutException:
-            st.warning(f"⏳ Timeout sur le match : {match_url.split('/')[-1]}")
+            st.warning(f"⏳ Le match a mis plus de 30s à charger (ignoré) : {match_url.split('/')[-1]}")
             continue
 
         try:
-            WebDriverWait(driver, 10).until(
+            WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "tbody tr td.ps-4"))
             )
             time.sleep(1)
-        except Exception as e:
-            st.error(
-                f"⚠️ **Erreur Étape 2 :** Tableau des cotes introuvable sur la page du match. (Sélecteur `tbody tr td.ps-4` obsolète). Match : {match_url.split('/')[-1]}")
+        except:
+            st.warning(f"⚠️ Tableau non trouvé pour {match_url}")
             continue
 
-            # Script JS optimisé avec nettoyage des ID et des espaces
+        # Script JS avec le correctif du "?"
         odds_script = '''
-            let results = [];
-            document.querySelectorAll("tbody tr").forEach(row => {
-                let bookLink = row.querySelector("td.ps-4 a[href*='/bookmaker/']");
-                let cells = row.querySelectorAll("td.text-center");
+        let results = [];
+        document.querySelectorAll("tbody tr").forEach(row => {
+            let bookLink = row.querySelector("td.ps-4 a[href*='/bookmaker/']");
+            let cells = row.querySelectorAll("td.text-center");
 
-                if (bookLink && cells.length >= 2) {
-                    // On récupère la fin de l'URL et on coupe au "?" s'il existe
-                    let rawId = bookLink.getAttribute("href").split("/").pop();
-                    let bookId = rawId.split("?")[0];
+            if (bookLink && cells.length >= 2) {
+                let rawId = bookLink.getAttribute("href").split("/").pop();
+                let bookId = rawId.split("?")[0];
 
-                    let cotes = Array.from(cells)
-                                     .map(c => c.innerText.replace(/\\s+/g, '').trim())
-                                     .filter(txt => /^[0-9.,]+$/.test(txt));
+                let cotes = Array.from(cells)
+                                 .map(c => c.innerText.replace(/\\s+/g, '').trim())
+                                 .filter(txt => /^[0-9.,]+$/.test(txt));
 
-                    results.push({id: bookId, cotes: cotes});
-                }
-            });
-            return results;
-            '''
+                results.push({id: bookId, cotes: cotes});
+            }
+        });
+        return results;
+        '''
 
         raw_data = driver.execute_script(odds_script)
-
-
-        if not raw_data:
-            st.warning(
-                f"⚠️ Le JavaScript n'a remonté aucune cote pour ce match. Identifiants bookmakers ou structure JS changés.")
 
         raw_name = match_url.split("/")[-1].replace("-", " ").title()
         match_name = re.sub(r'\s*\d+$', '', raw_name).strip()
@@ -204,6 +185,7 @@ def get_match_odds(
             b_name = book_map.get(item['id'], f"ID_{item['id']}")
             if b_name not in selected_bookmakers:
                 continue
+
             try:
                 c = [float(v.replace(',', '.')) for v in item['cotes'] if v]
                 if len(c) < outcomes_count: continue
