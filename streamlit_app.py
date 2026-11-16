@@ -113,51 +113,102 @@ def get_match_odds(
         headless: bool = True
 ) -> pd.DataFrame:
     driver = init_driver(headless=headless)
-    st.info(f"🔍 Diagnostic sur : {competition_url}")
 
     try:
         driver.get(competition_url)
+    except TimeoutException:
+        st.warning("⏳ La page de la compétition a mis plus de 30s à charger (ignorée).")
+        driver.quit()
+        return pd.DataFrame()
+
+    match_links = []
+    try:
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "match-row")))
         anchors = driver.find_elements(By.CSS_SELECTOR, ".match-row a[href*='/cote/']")
-        match_links = [a.get_attribute("href") for a in anchors]
+        for a in anchors:
+            match_links.append(a.get_attribute("href"))
     except:
         driver.quit()
         return pd.DataFrame()
 
-    match_links = list(dict.fromkeys(match_links))[:1]
+    match_links = list(dict.fromkeys(match_links))[:nb_matchs]
+    all_odds = []
+
+    # Dictionnaire étendu avec les ID trouvés dans le code source
+    book_map = {
+        "20": "Unibet", "21": "Pmu", "22": "ParionsSport", "24": "Betclic",
+        "30": "NetBet", "32": "Genybet", "33": "Winamax", "37": "Vbet",
+        "42": "Feelingbet", "43": "Betsson", "44": "OlyBet", "46": "DAZN Bet"
+    }
 
     for match_url in match_links:
         try:
             driver.get(match_url)
+        except TimeoutException:
+            continue
+
+        try:
+            # On attend l'apparition du nouveau tableau des cotes
             WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/bookmaker/']"))
+                EC.presence_of_element_located((By.ID, "oddsTable"))
             )
             time.sleep(1)
         except:
-            st.error("⚠️ Aucun lien '/bookmaker/' trouvé.")
             continue
 
-        # On remonte de 3 niveaux dans le HTML pour attraper tout le bloc contenant les cotes
-        html_script = '''
-        let el = document.querySelector("a[href*='/bookmaker/']");
-        if (el) {
-            let container = el.parentElement;
-            for (let i = 0; i < 3; i++) {
-                if (container.parentElement) {
-                    container = container.parentElement;
+        # Nouveau script JS adapté à la nouvelle structure HTML de Coteur
+        odds_script = '''
+        let results = [];
+        // On cible uniquement les lignes du corps du tableau des cotes
+        document.querySelectorAll("#oddsTable tbody tr").forEach(row => {
+            let bookLink = row.querySelector("td.cotes-col-book a[href*='/bookmaker/']");
+
+            if (bookLink) {
+                // Extraction de l'ID du bookmaker en gérant les paramètres d'URL (ex: ?e=cote-tableau)
+                let rawId = bookLink.getAttribute("href").split("/").pop();
+                let bookId = rawId.split("?")[0];
+
+                // Récupération des valeurs textuelles des cotes
+                let cotesElements = row.querySelectorAll("td.text-center span.odd-value");
+                let cotes = Array.from(cotesElements).map(c => c.innerText.replace(/\\s+/g, '').trim());
+
+                // On ne garde que les résultats qui ont le bon nombre de cotes
+                if(cotes.length > 0) {
+                    results.push({id: bookId, cotes: cotes});
                 }
             }
-            return container.outerHTML;
-        }
-        return "Erreur HTML";
+        });
+        return results;
         '''
 
-        raw_html = driver.execute_script(html_script)
-        st.write("🔍 **Structure du nouveau bloc de cotes :**")
-        st.code(raw_html, language="html")
+        raw_data = driver.execute_script(odds_script)
+
+        raw_name = match_url.split("/")[-1].replace("-", " ").title()
+        match_name = re.sub(r'\s*\d+$', '', raw_name).strip()
+
+        for item in raw_data:
+            b_name = book_map.get(item['id'], f"ID_{item['id']}")
+            if b_name not in selected_bookmakers:
+                continue
+
+            try:
+                c = [float(v.replace(',', '.')) for v in item['cotes'] if v]
+                if len(c) < outcomes_count: continue
+
+                inv_sum = sum(1 / val for val in c[:outcomes_count])
+                payout_val = round((1 / inv_sum) * 100, 2)
+
+                if outcomes_count == 3:
+                    all_odds.append([match_name, b_name, c[0], c[1], c[2], payout_val])
+                else:
+                    all_odds.append([match_name, b_name, c[0], c[-1], payout_val])
+            except:
+                continue
 
     driver.quit()
-    return pd.DataFrame()
+    cols = ["Match", "Bookmaker", "1", "Draw", "2", "Payout"] if outcomes_count == 3 else ["Match", "Bookmaker", "1",
+                                                                                           "2", "Payout"]
+    return pd.DataFrame(all_odds, columns=cols)
 
 
 # --------------------------------------------
