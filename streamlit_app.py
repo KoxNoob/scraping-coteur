@@ -117,59 +117,41 @@ def get_match_odds(
 
     try:
         driver.get(competition_url)
-    except TimeoutException:
-        st.error("⏳ Timeout compétition.")
-        driver.quit()
-        return pd.DataFrame()
-
-    match_links = []
-    try:
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "match-row")))
         anchors = driver.find_elements(By.CSS_SELECTOR, ".match-row a[href*='/cote/']")
-        for a in anchors:
-            match_links.append(a.get_attribute("href"))
+        match_links = [a.get_attribute("href") for a in anchors]
     except:
-        st.error("❌ Étape 1 : Le site a supprimé ou renommé la classe '.match-row' sur la page des compétitions.")
         driver.quit()
         return pd.DataFrame()
 
-    if not match_links:
-        st.error("❌ Étape 1 bis : '.match-row' trouvé, mais aucun lien contenant '/cote/' à l'intérieur.")
-        driver.quit()
-        return pd.DataFrame()
-
-    # On force l'analyse d'un seul match pour le diagnostic
+    # On teste uniquement le premier match
     match_links = list(dict.fromkeys(match_links))[:1]
-    st.success(f"✅ Page compétition OK. Analyse de : {match_links[0]}")
 
     for match_url in match_links:
         try:
             driver.get(match_url)
+            # On cherche juste un lien bookmaker au lieu d'une classe de style spécifique
             WebDriverWait(driver, 15).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "tbody tr td.ps-4"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/bookmaker/']"))
             )
             time.sleep(1)
         except:
-            st.error("⚠️ Étape 2 : Le tableau des cotes ('tbody tr td.ps-4') est introuvable sur la page du match.")
+            st.error("⚠️ Étape 2 : Aucun lien '/bookmaker/' trouvé sur la page.")
             continue
 
-        odds_script = '''
-        let results = [];
-        document.querySelectorAll("tbody tr").forEach(row => {
-            let bookLink = row.querySelector("td.ps-4 a[href*='/bookmaker/']");
-            let cells = row.querySelectorAll("td.text-center");
-
-            if (bookLink) {
-                let rawId = bookLink.getAttribute("href").split("/").pop();
-                let bookId = rawId.split("?")[0];
-                let cotes = Array.from(cells).map(c => c.innerText.replace(/\\s+/g, '').trim());
-                results.push({id: bookId, cotes: cotes, colonnes_trouvees: cells.length});
-            }
-        });
-        return results;
+        # On demande au navigateur de nous renvoyer le nouveau code HTML de la ligne
+        html_script = '''
+        let bookLink = document.querySelector("a[href*='/bookmaker/']");
+        if (bookLink) {
+            let row = bookLink.closest("tr");
+            return row ? row.innerHTML : bookLink.parentElement.innerHTML;
+        }
+        return "Erreur HTML";
         '''
-        raw_data = driver.execute_script(odds_script)
-        st.write("🔍 **Données brutes lues par le robot :**", raw_data)
+
+        raw_html = driver.execute_script(html_script)
+        st.write("🔍 **Nouveau code HTML trouvé :**")
+        st.code(raw_html, language="html")
 
     driver.quit()
     return pd.DataFrame()
