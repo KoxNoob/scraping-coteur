@@ -124,33 +124,36 @@ def get_match_odds(
         driver.quit()
         return pd.DataFrame()
 
-    # On teste uniquement le premier match
     match_links = list(dict.fromkeys(match_links))[:1]
 
     for match_url in match_links:
         try:
             driver.get(match_url)
-            # On cherche juste un lien bookmaker au lieu d'une classe de style spécifique
             WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "a[href*='/bookmaker/']"))
             )
             time.sleep(1)
         except:
-            st.error("⚠️ Étape 2 : Aucun lien '/bookmaker/' trouvé sur la page.")
+            st.error("⚠️ Aucun lien '/bookmaker/' trouvé.")
             continue
 
-        # On demande au navigateur de nous renvoyer le nouveau code HTML de la ligne
+        # On remonte de 3 niveaux dans le HTML pour attraper tout le bloc contenant les cotes
         html_script = '''
-        let bookLink = document.querySelector("a[href*='/bookmaker/']");
-        if (bookLink) {
-            let row = bookLink.closest("tr");
-            return row ? row.innerHTML : bookLink.parentElement.innerHTML;
+        let el = document.querySelector("a[href*='/bookmaker/']");
+        if (el) {
+            let container = el.parentElement;
+            for (let i = 0; i < 3; i++) {
+                if (container.parentElement) {
+                    container = container.parentElement;
+                }
+            }
+            return container.outerHTML;
         }
         return "Erreur HTML";
         '''
 
         raw_html = driver.execute_script(html_script)
-        st.write("🔍 **Nouveau code HTML trouvé :**")
+        st.write("🔍 **Structure du nouveau bloc de cotes :**")
         st.code(raw_html, language="html")
 
     driver.quit()
