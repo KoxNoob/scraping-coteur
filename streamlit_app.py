@@ -113,15 +113,15 @@ def get_match_odds(
         headless: bool = True
 ) -> pd.DataFrame:
     driver = init_driver(headless=headless)
+    st.info(f"🔍 Diagnostic sur : {competition_url}")
 
     try:
         driver.get(competition_url)
     except TimeoutException:
-        st.warning(f"⏳ La page de la compétition a mis plus de 30s à charger (ignorée).")
+        st.error("⏳ Timeout compétition.")
         driver.quit()
         return pd.DataFrame()
 
-    # Récupération des liens des matchs
     match_links = []
     try:
         WebDriverWait(driver, 15).until(EC.presence_of_element_located((By.CLASS_NAME, "match-row")))
@@ -129,81 +129,50 @@ def get_match_odds(
         for a in anchors:
             match_links.append(a.get_attribute("href"))
     except:
+        st.error("❌ Étape 1 : Le site a supprimé ou renommé la classe '.match-row' sur la page des compétitions.")
         driver.quit()
         return pd.DataFrame()
 
-    match_links = list(dict.fromkeys(match_links))[:nb_matchs]
-    all_odds = []
-    book_map = {"20": "Unibet", "21": "Pmu", "22": "ParionsSport", "24": "Betclic",
-                "30": "Bwin", "32": "Genybet", "33": "Winamax", "37": "Vbet",
-                "42": "Pokerstars", "43": "Betsson", "44": "Olybet", "46": "Partouche Sport"}
-    # J'ai ajouté quelques ID supplémentaires vus dans vos logs bruts (Bwin, Pokerstars, Partouche)
+    if not match_links:
+        st.error("❌ Étape 1 bis : '.match-row' trouvé, mais aucun lien contenant '/cote/' à l'intérieur.")
+        driver.quit()
+        return pd.DataFrame()
+
+    # On force l'analyse d'un seul match pour le diagnostic
+    match_links = list(dict.fromkeys(match_links))[:1]
+    st.success(f"✅ Page compétition OK. Analyse de : {match_links[0]}")
 
     for match_url in match_links:
         try:
             driver.get(match_url)
-        except TimeoutException:
-            st.warning(f"⏳ Le match a mis plus de 30s à charger (ignoré) : {match_url.split('/')[-1]}")
-            continue
-
-        try:
             WebDriverWait(driver, 15).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, "tbody tr td.ps-4"))
             )
             time.sleep(1)
         except:
-            st.warning(f"⚠️ Tableau non trouvé pour {match_url}")
+            st.error("⚠️ Étape 2 : Le tableau des cotes ('tbody tr td.ps-4') est introuvable sur la page du match.")
             continue
 
-        # Script JS avec le correctif du "?"
         odds_script = '''
         let results = [];
         document.querySelectorAll("tbody tr").forEach(row => {
             let bookLink = row.querySelector("td.ps-4 a[href*='/bookmaker/']");
             let cells = row.querySelectorAll("td.text-center");
 
-            if (bookLink && cells.length >= 2) {
+            if (bookLink) {
                 let rawId = bookLink.getAttribute("href").split("/").pop();
                 let bookId = rawId.split("?")[0];
-
-                let cotes = Array.from(cells)
-                                 .map(c => c.innerText.replace(/\\s+/g, '').trim())
-                                 .filter(txt => /^[0-9.,]+$/.test(txt));
-
-                results.push({id: bookId, cotes: cotes});
+                let cotes = Array.from(cells).map(c => c.innerText.replace(/\\s+/g, '').trim());
+                results.push({id: bookId, cotes: cotes, colonnes_trouvees: cells.length});
             }
         });
         return results;
         '''
-
         raw_data = driver.execute_script(odds_script)
-
-        raw_name = match_url.split("/")[-1].replace("-", " ").title()
-        match_name = re.sub(r'\s*\d+$', '', raw_name).strip()
-
-        for item in raw_data:
-            b_name = book_map.get(item['id'], f"ID_{item['id']}")
-            if b_name not in selected_bookmakers:
-                continue
-
-            try:
-                c = [float(v.replace(',', '.')) for v in item['cotes'] if v]
-                if len(c) < outcomes_count: continue
-
-                inv_sum = sum(1 / val for val in c[:outcomes_count])
-                payout_val = round((1 / inv_sum) * 100, 2)
-
-                if outcomes_count == 3:
-                    all_odds.append([match_name, b_name, c[0], c[1], c[2], payout_val])
-                else:
-                    all_odds.append([match_name, b_name, c[0], c[-1], payout_val])
-            except:
-                continue
+        st.write("🔍 **Données brutes lues par le robot :**", raw_data)
 
     driver.quit()
-    cols = ["Match", "Bookmaker", "1", "Draw", "2", "Payout"] if outcomes_count == 3 else ["Match", "Bookmaker", "1",
-                                                                                           "2", "Payout"]
-    return pd.DataFrame(all_odds, columns=cols)
+    return pd.DataFrame()
 
 
 # --------------------------------------------
